@@ -1,0 +1,193 @@
+component_id,line_number,series_code,description,housing,market_based,source_group
+pce_l007_l008,7+8,DNDCRG|DNDCRC+DNFCRC,New domestic and foreign autos (shared price),FALSE,TRUE,Durable goods
+pce_l009,9,DNWTRG|DNWTRC,New light trucks,FALSE,TRUE,Durable goods
+pce_l014_l016,14+16,DNETRG|DNETRC+DREERC,"Net transactions in used autos, net of employee reimbursement",FALSE,TRUE,Durable goods
+pce_l015,15,DMARRG|DMARRC,Used auto margin,FALSE,FALSE,Durable goods
+pce_l018,18,DUTNRG|DUTNRC,Net transactions in used trucks,FALSE,TRUE,Durable goods
+pce_l019,19,DUTMRG|DUTMRC,Used truck margin,FALSE,FALSE,Durable goods
+pce_l021,21,DTATRG|DTATRC,Tires,FALSE,TRUE,Durable goods
+pce_l022,22,DPAARG|DPAARC,Accessories and parts,FALSE,TRUE,Durable goods
+pce_l025,25,DFNRRG|DFNRRC,Furniture,FALSE,TRUE,Durable goods
+pce_l026,26,DCLFRG|DCLFRC,"Clocks, lamps, lighting fixtures, and other household decorative items",FALSE,TRUE,Durable goods
+pce_l027,27,DFLRRG|DFLRRC,Carpets and other floor coverings,FALSE,TRUE,Durable goods
+pce_l028,28,DWCTRG|DWCTRC,Window coverings,FALSE,TRUE,Durable goods
+pce_l030,30,DMHARG|DMHARC,Major household appliances,FALSE,TRUE,Durable goods
+pce_l031,31,DSEARG|DSEARC,Small electric household appliances,FALSE,TRUE,Durable goods
+pce_l033,33,DCHNRG|DCHNRC,Dishes and flatware,FALSE,TRUE,Durable goods
+pce_l034,34,DNECRG|DNECRC,Nonelectric cookware and tableware,FALSE,TRUE,Durable goods
+pce_l036,36,DHDWRG|DHDWRC,"Tools, hardware, and supplies",FALSE,TRUE,Durable goods
+pce_l037,37,DLWNRG|DLWNRC,Outdoor equipment and supplies,FALSE,TRUE,Durable goods
+pce_l041,41,DTVSRG|DTVSRC,Televisions,FALSE,TRUE,Durable goods
+pce_l042,42,DOVARG|DOVARC,Other video equipment,FALSE,TRUE,Durable goods
+pce_l043,43,DAUDRG|DAUDRC,Audio equipment,FALSE,TRUE,Durable goods
+pce_l045,45,DRTDRG|DRTDRC,"Audio discs, tapes, vinyl, and permanent digital downloads",FALSE,TRUE,Durable goods
+pce_l046,46,DOVERG|DOVERC,"Video discs, tapes, and permanent digital downloads",FALSE,TRUE,Durable goods
+pce_l047,47,DCAMRG|DCAMRC,Photographic equipment,FALSE,TRUE,Durable goods
+pce_l049,49,DCPPRG|DCPPRC,Personal computers/tablets and peripheral equipment,FALSE,TRUE,Durable goods
+pce_l050,50,DCPSRG|DCPSRC,Computer software and accessories,FALSE,TRUE,Durable goods
+pce_l051,51,DOIPRG|DOIPRC,"Calculators, typewriters, and other information processing equipment",FALSE,TRUE,Durable goods
+pce_l052,52,DSPGRG|DSPGRC,"Sporting equipment, supplies, guns, and ammunition",FALSE,TRUE,Durable goods
+pce_l054,54,DMCYRG|DMCYRC,Motorcycles,FALSE,TRUE,Durable goods
+pce_l055,55,DBCYRG|DBCYRC,Bicycles and accessories,FALSE,TRUE,Durable goods
+pce_l057,57,DBOARG|DBOARC,Pleasure boats,FALSE,TRUE,Durable goods
+pce_l058,58,DAIRRG|DAIRRC,Pleasure aircraft,FALSE,TRUE,Durable goods
+pce_l059,59,DREVRG|DREVRC,Other recreational vehicles,FALSE,TRUE,Durable goods
+pce_l060,60,DRBKRG|DRBKRC,Recreational books,FALSE,TRUE,Durable goods
+pce_l061,61,DMSCRG|DMSCRC,Musical instruments,FALSE,TRUE,Durable goods
+pce_l064,64,DJLYRG|DJLYRC,Jewelry,FALSE,TRUE,Durable goods
+pce_l065,65,DWTCRG|DWTCRC,Watches,FALSE,TRUE,Durable goods
+pce_l067,67,DTMERG|DTMERC,Therapeutic medical equipment,FALSE,TRUE,Durable goods
+pce_l068,68,DEYERG|DEYERC,Corrective eyeglasses and contact lenses,FALSE,TRUE,Durable goods
+pce_l069,69,DEBKRG|DEBKRC,Educational books,FALSE,TRUE,Durable goods
+pce_l070,70,DLUGRG|DLUGRC,Luggage and similar personal items,FALSE,TRUE,Durable goods
+pce_l071,71,DTCERG|DTCERC,Telephone and related communication equipment,FALSE,TRUE,Durable goods
+pce_l077,77,DGRARG|DGRARC,Cereals,FALSE,TRUE,Nondurable goods
+pce_l078,78,DBAKRG|DBAKRC,Bakery products,FALSE,TRUE,Nondurable goods
+pce_l080,80,DBEERG|DBEERC,Beef and veal,FALSE,TRUE,Nondurable goods
+pce_l081,81,DPORRG|DPORRC,Pork,FALSE,TRUE,Nondurable goods
+pce_l082,82,DMEARG|DMEARC,Other meats,FALSE,TRUE,Nondurable goods
+pce_l083,83,DPOURG|DPOURC,Poultry,FALSE,TRUE,Nondurable goods
+pce_l084,84,DFISRG|DFISRC,Fish and seafood,FALSE,TRUE,Nondurable goods
+pce_l086,86,DMILRG|DMILRC,Fresh milk,FALSE,TRUE,Nondurable goods
+pce_l087,87,DDAIRG|DDAIRC,Processed dairy products,FALSE,TRUE,Nondurable goods
+pce_l088,88,DGGSRG|DGGSRC,Eggs,FALSE,TRUE,Nondurable goods
+pce_l089,89,DFATRG|DFATRC,Fats and oils,FALSE,TRUE,Nondurable goods
+pce_l091,91,DFRURG|DFRURC,Fruit (fresh),FALSE,TRUE,Nondurable goods
+pce_l092,92,DVEGRG|DVEGRC,Vegetables (fresh),FALSE,TRUE,Nondurable goods
+pce_l093,93,DPFVRG|DPFVRC,Processed fruits and vegetables,FALSE,TRUE,Nondurable goods
+pce_l094,94,DSWERG|DSWERC,Sugar and sweets,FALSE,TRUE,Nondurable goods
+pce_l095,95,DOFDRG|DOFDRC,"Food products, not elsewhere classified",FALSE,TRUE,Nondurable goods
+pce_l097,97,DCTMRG|DCTMRC,"Coffee, tea, and other beverage materials",FALSE,TRUE,Nondurable goods
+pce_l098,98,DJNBRG|DJNBRC,"Mineral waters, soft drinks, and vegetable juices",FALSE,TRUE,Nondurable goods
+pce_l100,100,DLIQRG|DLIQRC,Spirits,FALSE,TRUE,Nondurable goods
+pce_l101,101,DWINRG|DWINRC,Wine,FALSE,TRUE,Nondurable goods
+pce_l102,102,DMLTRG|DMLTRC,Beer,FALSE,TRUE,Nondurable goods
+pce_l103,103,DFFDRG|DFFDRC,Food produced and consumed on farms,FALSE,FALSE,Nondurable goods
+pce_l106,106,DWGCRG|DWGCRC,Women's and girls' clothing,FALSE,TRUE,Nondurable goods
+pce_l107,107,DMBCRG|DMBCRC,Men's and boys' clothing,FALSE,TRUE,Nondurable goods
+pce_l108,108,DCICRG|DCICRC,Children's and infants' clothing,FALSE,TRUE,Nondurable goods
+pce_l110,110,DCSMRG|DCSMRC,Clothing materials,FALSE,TRUE,Nondurable goods
+pce_l111,111,DMICRG|DMICRC,Standard clothing issued to military personnel,FALSE,FALSE,Nondurable goods
+pce_l112,112,DSHURG|DSHURC,Shoes and other footwear,FALSE,TRUE,Nondurable goods
+pce_l115,115,DGASRG|DGASRC,Gasoline and other motor fuel,FALSE,TRUE,Nondurable goods
+pce_l116,116,DLUBRG|DLUBRC,Lubricants and fluids,FALSE,TRUE,Nondurable goods
+pce_l118,118,DOILRG|DOILRC,Fuel oil,FALSE,TRUE,Nondurable goods
+pce_l119,119,DLPFRG|DLPFRC,Other fuels,FALSE,TRUE,Nondurable goods
+pce_l123,123,DRXDRG|DRXDRC,Prescription drugs,FALSE,TRUE,Nondurable goods
+pce_l124,124,DNRDRG|DNRDRC,Nonprescription drugs,FALSE,TRUE,Nondurable goods
+pce_l125,125,DOMPRG|DOMPRC,Other medical products,FALSE,TRUE,Nondurable goods
+pce_l127,127,DDOLRG|DDOLRC,"Games, toys, and hobbies",FALSE,TRUE,Nondurable goods
+pce_l128,128,DPRPRG|DPRPRC,Pets and related products,FALSE,TRUE,Nondurable goods
+pce_l129,129,DFLORG|DFLORC,"Flowers, seeds, and potted plants",FALSE,TRUE,Nondurable goods
+pce_l130,130,DFLMRG|DFLMRC,Film and photographic supplies,FALSE,TRUE,Nondurable goods
+pce_l132,132,DCLERG|DCLERC,Household cleaning products,FALSE,TRUE,Nondurable goods
+pce_l133,133,DPAPRG|DPAPRC,Household paper products,FALSE,TRUE,Nondurable goods
+pce_l134,134,DLINRG|DLINRC,Household linens,FALSE,TRUE,Nondurable goods
+pce_l135,135,DSEWRG|DSEWRC,Sewing items,FALSE,TRUE,Nondurable goods
+pce_l136,136,DMHPRG|DMHPRC,Miscellaneous household products,FALSE,TRUE,Nondurable goods
+pce_l138,138,DOPHRG|DOPHRC,"Hair, dental, shaving, and miscellaneous personal care products except electrical products",FALSE,TRUE,Nondurable goods
+pce_l139,139,DCOSRG|DCOSRC,Cosmetic / perfumes / bath / nail preparations and implements,FALSE,TRUE,Nondurable goods
+pce_l140,140,DEAPRG|DEAPRC,Electric appliances for personal care,FALSE,TRUE,Nondurable goods
+pce_l141,141,DTOBRG|DTOBRC,Tobacco,FALSE,TRUE,Nondurable goods
+pce_l143,143,DMAGRG|DMAGRC,Newspapers and periodicals,FALSE,TRUE,Nondurable goods
+pce_l144,144,DSTYRG|DSTYRC,Stationery and miscellaneous printed materials,FALSE,TRUE,Nondurable goods
+pce_l155,155,DTMHRG|DTMHRC,Tenant-occupied mobile homes,TRUE,TRUE,Services
+pce_l156,156,IA000629|LA000629,Tenant-occupied stationary homes and landlord durables,TRUE,TRUE,Services
+pce_l161,161,DOMHRG|DOMHRC,Owner-occupied mobile homes,TRUE,TRUE,Services
+pce_l162,162,DOSTRG|DOSTRC,Owner-occupied stationary homes,TRUE,TRUE,Services
+pce_l163,163,DFARRG|DFARRC,Rental value of farm dwellings,FALSE,FALSE,Services
+pce_l164,164,DGRHRG|DGRHRC,Group housing,FALSE,TRUE,Services
+pce_l167,167,DWSMRG|DWSMRC,Water supply and sewage maintenance,FALSE,TRUE,Services
+pce_l168,168,DREFRG|DREFRC,Garbage and trash collection,FALSE,TRUE,Services
+pce_l170,170,DELCRG|DELCRC,Electricity,FALSE,TRUE,Services
+pce_l171,171,DGHERG|DGHERC,Natural gas,FALSE,TRUE,Services
+pce_l174,174,DPHYRG|DPHYRC,Physician services,FALSE,TRUE,Services
+pce_l175,175,DDENRG|DDENRC,Dental services,FALSE,TRUE,Services
+pce_l177,177,DHHCRG|DHHCRC,Home health care,FALSE,TRUE,Services
+pce_l178,178,DMLBRG|DMLBRC,Medical laboratories,FALSE,TRUE,Services
+pce_l180,180,DOMSRG|DOMSRC,Specialty outpatient care facilities and health and allied services,FALSE,TRUE,Services
+pce_l181,181,DOMORG|DOMORC,All other professional medical services,FALSE,TRUE,Services
+pce_l184,184,DNPHRG|DNPHRC,Nonprofit hospitals' services to households,FALSE,TRUE,Services
+pce_l185,185,DFPHRG|DFPHRC,Proprietary hospitals,FALSE,TRUE,Services
+pce_l186,186,DGVHRG|DGVHRC,Government hospitals,FALSE,TRUE,Services
+pce_l188,188,DNPNRG|DNPNRC,Nonprofit nursing homes' services to households,FALSE,TRUE,Services
+pce_l189,189,DFPNRG|DFPNRC,Proprietary and government nursing homes,FALSE,TRUE,Services
+pce_l192,192,DVMRRG|DVMRRC,Motor vehicle maintenance and repair,FALSE,TRUE,Services
+pce_l194,194,DMVLRG|DMVLRC,Motor vehicle leasing,FALSE,TRUE,Services
+pce_l197,197,DMVRRG|DMVRRC,Motor vehicle rental,FALSE,TRUE,Services
+pce_l198,198,DPFTRG|DPFTRC,Parking fees and tolls,FALSE,TRUE,Services
+pce_l201,201,DIRRRG|DIRRRC,Railway transportation,FALSE,TRUE,Services
+pce_l203,203,DIBURG|DIBURC,Intercity buses,FALSE,TRUE,Services
+pce_l204,204,DTAXRG|DTAXRC,Taxicabs and ride sharing services,FALSE,TRUE,Services
+pce_l205,205,DIMTRG|DIMTRC,Intracity mass transit,FALSE,TRUE,Services
+pce_l206,206,DORTRG|DORTRC,Other road transportation service,FALSE,TRUE,Services
+pce_l207,207,DAITRG|DAITRC,Air transportation,FALSE,TRUE,Services
+pce_l208,208,DWATRG|DWATRC,Water transportation,FALSE,TRUE,Services
+pce_l211,211,DMDFRG|DMDFRC,Membership clubs and participant sports centers,FALSE,TRUE,Services
+pce_l212,212,DORSRG|DORSRC,"Amusement parks, campgrounds, and related recreational services",FALSE,TRUE,Services
+pce_l214,214,DMOVRG|DMOVRC,Motion picture theaters,FALSE,TRUE,Services
+pce_l215,215,DLIGRG|DLIGRC,"Live entertainment, excluding sports",FALSE,TRUE,Services
+pce_l216,216,DSPERG|DSPERC,Spectator sports,FALSE,TRUE,Services
+pce_l217,217,DMUSRG|DMUSRC,Museums and libraries,FALSE,TRUE,Services
+pce_l218,218,DAVPRG|DAVPRC,"Audio-video, photographic, and information processing equipment services",FALSE,TRUE,Services
+pce_l227,227,DCASRG|DCASRC,Casino gambling,FALSE,FALSE,Services
+pce_l228,228,DLOTRG|DLOTRC,Lotteries,FALSE,FALSE,Services
+pce_l229,229,DPARRG|DPARRC,Pari-mutuel net receipts,FALSE,FALSE,Services
+pce_l231,231,DVETRG|DVETRC,Veterinary and other services for pets,FALSE,TRUE,Services
+pce_l232,232,DHOLRG|DHOLRC,Package tours,FALSE,TRUE,Services
+pce_l233,233,DRRERG|DRRERC,Maintenance and repair of recreational vehicles and sports equipment,FALSE,TRUE,Services
+pce_l239,239,DESLRG|DESLRC,Elementary and secondary school lunches,FALSE,TRUE,Services
+pce_l240,240,DHSLRG|DHSLRC,Higher education school lunches,FALSE,TRUE,Services
+pce_l241,241,DOPMRG|DOPMRC,Other purchased meals,FALSE,TRUE,Services
+pce_l245,245,DAPMRG|DAPMRC,Alcohol in purchased meals,FALSE,TRUE,Services
+pce_l247,247,DCFDRG|DCFDRC,Food supplied to civilians,FALSE,FALSE,Services
+pce_l248,248,DMFDRG|DMFDRC,Food supplied to military,FALSE,FALSE,Services
+pce_l250,250,DHOTRG|DHOTRC,Hotels and motels,FALSE,TRUE,Services
+pce_l251,251,DSCHRG|DSCHRC,Housing at schools,FALSE,TRUE,Services
+pce_l255,255,DIMCRG|DIMCRC,Commercial banks,FALSE,FALSE,Services
+pce_l256,256,DIMNRG|DIMNRC,Other depository institutions and regulated investment companies,FALSE,FALSE,Services
+pce_l257,257,DPENRG|DPENRC,Pension funds,FALSE,FALSE,Services
+pce_l259,259,DFEERG|DFEERC,Financial service charges and fees,FALSE,TRUE,Services
+pce_l261,261,DDCTRG|DDCTRC,Direct commissions,FALSE,TRUE,Services
+pce_l264,264,DICTRG|DICTRC,Indirect commissions,FALSE,TRUE,Services
+pce_l267,267,DMUTRG|DMUTRC,Mutual fund sales charges,FALSE,FALSE,Services
+pce_l268,268,DPMIRG|DPMIRC,Portfolio management and investment advice services,FALSE,FALSE,Services
+pce_l269,269,DTRURG|DTRURC,"Trust, fiduciary, and custody activities",FALSE,FALSE,Services
+pce_l271,271,DLIFRG|DLIFRC,Life insurance,FALSE,FALSE,Services
+pce_l272,272,DFINRG|DFINRC,Net household insurance,FALSE,TRUE,Services
+pce_l275,275,DHINRG|DHINRC,Net health insurance,FALSE,FALSE,Services
+pce_l279,279,DTINRG|DTINRC,Net motor vehicle and other transportation insurance,FALSE,FALSE,Services
+pce_l283,283,DLOCRG|DLOCRC,"Land-line telephone services, local charges",FALSE,TRUE,Services
+pce_l284,284,DLDTRG|DLDTRC,"Land-line telephone services, long-distance charges",FALSE,TRUE,Services
+pce_l285,285,DCELRG|DCELRC,Cellular telephone services,FALSE,TRUE,Services
+pce_l287,287,DPSTRG|DPSTRC,First-class postal service (by U.S. Postal Service),FALSE,TRUE,Services
+pce_l288,288,DODSRG|DODSRC,Other delivery services (by non-U.S. postal facilities),FALSE,TRUE,Services
+pce_l289,289,DINTRG|DINTRC,Internet access,FALSE,TRUE,Services
+pce_l292,292,DGEDRG|DGEDRC,Proprietary and public higher education,FALSE,TRUE,Services
+pce_l293,293,DPEDRG|DPEDRC,Nonprofit private higher education services to households,FALSE,TRUE,Services
+pce_l295,295,DESCRG|DESCRC,Elementary and secondary schools,FALSE,TRUE,Services
+pce_l296,296,DNSCRG|DNSCRC,Day care and nursery schools,FALSE,TRUE,Services
+pce_l297,297,DVEDRG|DVEDRC,Commercial and vocational schools,FALSE,TRUE,Services
+pce_l299,299,DGALRG|DGALRC,Legal services,FALSE,TRUE,Services
+pce_l301,301,DTAPRG|DTAPRC,Tax preparation and other related services,FALSE,TRUE,Services
+pce_l302,302,DGENRG|DGENRC,Employment agency services,FALSE,TRUE,Services
+pce_l303,303,DTHERG|DTHERC,Other personal business services,FALSE,TRUE,Services
+pce_l304,304,DUNSRG|DUNSRC,Labor organization dues,FALSE,FALSE,Services
+pce_l305,305,DAXSRG|DAXSRC,Professional association dues,FALSE,TRUE,Services
+pce_l306,306,DFUNRG|DFUNRC,Funeral and burial services,FALSE,TRUE,Services
+pce_l309,309,DBBBRG|DBBBRC,Hairdressing salons and personal grooming establishments,FALSE,TRUE,Services
+pce_l310,310,DMPCRG|DMPCRC,Miscellaneous personal care services,FALSE,TRUE,Services
+pce_l312,312,DDRYRG|DDRYRC,Laundry and drycleaning services,FALSE,TRUE,Services
+pce_l313,313,DLGRRG|DLGRRC,"Clothing repair, rental, and alterations",FALSE,TRUE,Services
+pce_l314,314,DSCLRG|DSCLRC,Repair and hire of footwear,FALSE,TRUE,Services
+pce_l316,316,DCHCRG|DCHCRC,Child care,FALSE,TRUE,Services
+pce_l317,317,DSCWRG|DSCWRC,Social assistance,FALSE,FALSE,Services
+pce_l324,324,DSADRG|DSADRC,Social advocacy and civic and social organizations,FALSE,FALSE,Services
+pce_l325,325,DRELRG|DRELRC,Religious organizations' services to households,FALSE,FALSE,Services
+pce_l326,326,DGIVRG|DGIVRC,Foundations and grantmaking and giving services to households,FALSE,FALSE,Services
+pce_l328,328,DDMSRG|DDMSRC,Domestic services,FALSE,TRUE,Services
+pce_l329,329,DMSERG|DMSERC,"Moving, storage, and freight services",FALSE,TRUE,Services
+pce_l330,330,DFRERG|DFRERC,"Repair of furniture, furnishings, and floor coverings",FALSE,TRUE,Services
+pce_l331,331,DERERG|DERERC,Repair of household appliances,FALSE,TRUE,Services
+pce_l332,332,DMHSRG|DMHSRC,Other household services,FALSE,TRUE,Services
+pce_l342,342,DNPIRG|DNPIRC,Final consumption expenditures of nonprofit institutions serving households (NPISHs),FALSE,FALSE,NPISH

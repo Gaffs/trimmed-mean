@@ -1,0 +1,6 @@
+.bea_api_key
+data/raw/
+data/processed/
+.Rhistory
+.RData
+.Ruserdata
