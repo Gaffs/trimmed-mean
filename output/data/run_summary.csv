@@ -1,2 +1,2 @@
-latest_month,components,market_based_share,figures
-2026-08-01,192,0.866279521455861,7
+latest_month,components,market_based_share,figures,expanded_lines,dallas_complete_months,dallas_mean_abs_error_pp,dallas_max_abs_error_pp,refresh
+2026-08-01,192,0.866279521455861,7,194,116,0.0381705602268217,0.0976007589605365,TRUE

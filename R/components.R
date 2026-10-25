@@ -1,5 +1,9 @@
 # BEA PCE component crosswalk used by the Employ America trimmed-mean work.
 #
+# Public entry points:
+#   prepare_component_panel(price, nominal, strict = TRUE)
+#   update_bea_line_locks(price, nominal, path = "config", dry_run = FALSE)
+#
 # Baseline component list: the current 177-component Dallas workbook at
 #   https://www.dallasfed.org/-/media/documents/research/pce/detail
 # The Dallas technical note at
@@ -34,6 +38,17 @@
 # tenant-occupied parent 156 and are represented by that parent. Line numbers
 # refer to the current U20404/U20405 vintage and must be rechecked when BEA
 # renumbers the underlying detail.
+#
+# BEA line and crosswalk integrity locks are tracked in
+#   config/bea_line_lock.csv      every line in each current U20404/U20405 table
+#   config/crosswalk_lock.csv     the 194 expanded component lines and flags
+# prepare_component_panel() compares both locks with the supplied BEA tables and
+# stops with a readable diff on any added, removed, renumbered, renamed, or
+# recoded line. The locks are never rewritten automatically. After reviewing a
+# BEA change, accept it deliberately with
+#   update_bea_line_locks(price, nominal)
+# and commit the regenerated lock files. Ordinary monthly releases do not change
+# line metadata and therefore pass without touching the locks.
 
 .pce_map_text <- r"---(line_number|price_line|component_id|description|housing|market_based|source_group|dallas_name
 130|130|pce_l130|Film and photographic supplies|False|True|Nondurable goods|Film and photographic supplies
@@ -229,6 +244,310 @@
 115|115|pce_l115|Gasoline and other motor fuel|False|True|Nondurable goods|Gasoline and other motor fuel
 118|118|pce_l118|Fuel oil|False|True|Nondurable goods|Fuel oil)---"
 
+.pce_expected_components <- 192L
+.pce_expected_bea_lines <- 194L
+.pce_excluded_lines <- c(145L, 333L)
+.pce_excluded_line_reasons <- c(
+  "145" = "netting of expenditures abroad",
+  "333" = "net foreign travel"
+)
+.pce_housing_lines <- c(155L, 156L, 161L, 162L)
+.pce_expected_market_components <- 167L
+.pce_expected_housing_components <- 4L
+.pce_source_groups <- c("Durable goods", "Nondurable goods", "Services", "NPISH")
+.pce_identity_tolerance <- 5
+.pce_coverage_tolerance <- 50
+.pce_market_share_range <- c(0.70, 0.95)
+.pce_housing_share_range <- c(0.05, 0.30)
+# Nominal-dollar accounting identities. Price indexes are not additive, so
+# these are checked against U20405 only. The $5 million tolerance reflects
+# BEA's million-dollar rounding across the published parent and child lines.
+.pce_identity_specs <- list(
+  list(
+    label = "Used autos (line 13 = 14 + 15 + 16)",
+    parent = 13L, children = c(14L, 15L, 16L)
+  ),
+  list(
+    label = "Used light trucks (line 17 = 18 + 19)",
+    parent = 17L, children = c(18L, 19L)
+  ),
+  list(
+    label = "Communication (line 281 = 282 + 286 + 289)",
+    parent = 281L, children = c(282L, 286L, 289L)
+  ),
+  list(
+    label = "Telecommunication services (line 282 = 283 + 284 + 285)",
+    parent = 282L, children = c(283L, 284L, 285L)
+  ),
+  list(
+    label = "Postal and delivery services (line 286 = 287 + 288)",
+    parent = 286L, children = c(287L, 288L)
+  )
+)
+
+.pce_project_root <- function() {
+  root <- Sys.getenv("BEA_PROJECT_ROOT", unset = "")
+  if (!nzchar(root)) {
+    root <- getOption("pce.project_root", "")
+    if (is.null(root)) root <- ""
+  }
+  if (!nzchar(root)) {
+    wd <- normalizePath(getwd(), winslash = "/", mustWork = TRUE)
+    root <- wd
+    markers <- c("R/components.R", ".git")
+    if (!any(file.exists(file.path(wd, markers)))) {
+      cur <- wd
+      repeat {
+        parent <- dirname(cur)
+        if (identical(parent, cur)) break
+        cur <- parent
+        if (any(file.exists(file.path(cur, markers)))) {
+          root <- cur
+          break
+        }
+      }
+    }
+  }
+  if (!dir.exists(root)) {
+    stop("Project root does not exist: ", root, call. = FALSE)
+  }
+  normalizePath(root, winslash = "/", mustWork = TRUE)
+}
+
+.pce_lock_dir <- function(path = NULL) {
+  if (is.null(path)) {
+    path <- Sys.getenv("PCE_LOCK_DIR", unset = "")
+    if (!nzchar(path)) {
+      path <- getOption("pce.lock_dir", "")
+      if (is.null(path)) path <- ""
+    }
+    if (!nzchar(path)) path <- file.path(.pce_project_root(), "config")
+  }
+  if (!is.character(path) || length(path) != 1L ||
+      is.na(path) || !nzchar(path)) {
+    stop("Lock directory must be a single non-empty path.", call. = FALSE)
+  }
+  path <- path.expand(path)
+  if (!grepl("^([A-Za-z]:[/\\\\]|[/\\\\])", path)) {
+    path <- file.path(.pce_project_root(), path)
+  }
+  path
+}
+
+.pce_lock_paths <- function(path = NULL) {
+  dir <- .pce_lock_dir(path)
+  list(
+    dir = dir,
+    bea_line_lock = file.path(dir, "bea_line_lock.csv"),
+    crosswalk_lock = file.path(dir, "crosswalk_lock.csv")
+  )
+}
+
+.pce_lock_integer <- function(dt, columns, path) {
+  for (column in columns) {
+    x <- dt[[column]]
+    numeric <- suppressWarnings(as.numeric(as.character(x)))
+    integer <- suppressWarnings(as.integer(as.character(x)))
+    if (anyNA(integer) || anyNA(numeric) || any(integer != numeric)) {
+      stop(
+        "Lockfile ", path, " has a non-integer `", column, "` value.",
+        call. = FALSE
+      )
+    }
+    data.table::set(dt, j = column, value = integer)
+  }
+  invisible(dt)
+}
+
+.pce_lock_logical <- function(dt, columns, path) {
+  for (column in columns) {
+    x <- dt[[column]]
+    if (is.logical(x)) {
+      if (anyNA(x)) {
+        stop("Lockfile ", path, " has a missing `", column, "` value.",
+             call. = FALSE)
+      }
+      next
+    }
+    if (is.numeric(x)) {
+      if (anyNA(x) || !all(x %in% c(0, 1))) {
+        stop("Lockfile ", path, " has an invalid `", column, "` value.",
+             call. = FALSE)
+      }
+      data.table::set(dt, j = column, value = as.logical(x))
+      next
+    }
+    text <- toupper(trimws(as.character(x)))
+    if (anyNA(text) || !all(text %in% c("TRUE", "FALSE"))) {
+      stop("Lockfile ", path, " has an invalid `", column, "` value.",
+           call. = FALSE)
+    }
+    data.table::set(dt, j = column, value = text == "TRUE")
+  }
+  invisible(dt)
+}
+
+.pce_lock_text <- function(dt, columns, path, allow_na = FALSE) {
+  for (column in columns) {
+    x <- as.character(dt[[column]])
+    if (!allow_na && anyNA(x)) {
+      stop("Lockfile ", path, " has a missing `", column, "` value.",
+           call. = FALSE)
+    }
+    if (allow_na) {
+      x[!is.na(x) & !nzchar(trimws(x))] <- NA_character_
+    } else if (any(!nzchar(trimws(x)))) {
+      stop("Lockfile ", path, " has an empty `", column, "` value.",
+           call. = FALSE)
+    }
+    data.table::set(dt, j = column, value = x)
+  }
+  invisible(dt)
+}
+
+.pce_read_lock_file <- function(path, required) {
+  if (!file.exists(path)) {
+    stop(
+      "Required lockfile does not exist: ", path, "\n",
+      "Run update_bea_line_locks(price, nominal) after reviewing the BEA ",
+      "line set, then commit the regenerated locks.",
+      call. = FALSE
+    )
+  }
+  lock <- tryCatch(
+    data.table::fread(path, data.table = TRUE, na.strings = c("NA", "")),
+    error = function(e) {
+      stop("Could not read lockfile ", path, ": ", conditionMessage(e),
+           call. = FALSE)
+    }
+  )
+  missing <- setdiff(required, names(lock))
+  if (length(missing)) {
+    stop(
+      "Lockfile ", path, " is missing required column(s): ",
+      paste(missing, collapse = ", "), ".",
+      call. = FALSE
+    )
+  }
+  if (anyDuplicated(names(lock))) {
+    stop("Lockfile ", path, " has duplicated column names.", call. = FALSE)
+  }
+  lock[]
+}
+
+.pce_read_locks <- function(path = NULL) {
+  paths <- .pce_lock_paths(path)
+  list(
+    paths = paths,
+    bea_line_lock = .pce_read_lock_file(
+      paths$bea_line_lock,
+      c("table", "line_number", "description", "series_code")
+    ),
+    crosswalk_lock = .pce_read_lock_file(
+      paths$crosswalk_lock,
+      c(
+        "component_id", "component_line", "line_number", "line_order",
+        "price_line", "is_price_source", "component_description",
+        "line_description", "price_series_code", "nominal_series_code",
+        "housing", "market_based", "source_group", "dallas_name"
+      )
+    )
+  )
+}
+
+.pce_validate_bea_line_lock <- function(lock, path) {
+  .pce_lock_integer(lock, "line_number", path)
+  .pce_lock_text(lock, c("table", "description", "series_code"), path)
+  if (anyDuplicated(paste(lock$table, lock$line_number, sep = "|"))) {
+    stop(
+      "Lockfile ", path,
+      " has duplicate table/line_number rows.",
+      call. = FALSE
+    )
+  }
+  tables <- sort(unique(lock$table))
+  if (!identical(tables, c("U20404", "U20405"))) {
+    stop(
+      "Lockfile ", path, " must describe exactly U20404 and U20405; found: ",
+      paste(tables, collapse = ", "), ".",
+      call. = FALSE
+    )
+  }
+  if (any(lock$line_number <= 0L)) {
+    stop("Lockfile ", path, " has non-positive line numbers.", call. = FALSE)
+  }
+  data.table::setorder(lock, table, line_number)
+  invisible(lock)
+}
+
+.pce_validate_crosswalk_lock_basic <- function(lock, path) {
+  .pce_lock_integer(
+    lock,
+    c("line_number", "line_order", "price_line"),
+    path
+  )
+  .pce_lock_logical(lock, c("is_price_source", "housing", "market_based"), path)
+  .pce_lock_text(
+    lock,
+    c(
+      "component_id", "component_line", "component_description",
+      "line_description", "nominal_series_code", "source_group", "dallas_name"
+    ),
+    path
+  )
+  .pce_lock_text(lock, "price_series_code", path, allow_na = TRUE)
+  if (nrow(lock) != .pce_expected_bea_lines) {
+    stop(
+      "Lockfile ", path, " has ", nrow(lock), " rows; expected ",
+      .pce_expected_bea_lines, " expanded component lines.",
+      call. = FALSE
+    )
+  }
+  if (data.table::uniqueN(lock$component_id) != .pce_expected_components) {
+    stop(
+      "Lockfile ", path, " has ",
+      data.table::uniqueN(lock$component_id),
+      " components; expected ", .pce_expected_components, ".",
+      call. = FALSE
+    )
+  }
+  if (anyDuplicated(lock$line_number)) {
+    stop("Lockfile ", path, " assigns a BEA line more than once.", call. = FALSE)
+  }
+  if (anyDuplicated(paste(lock$component_id, lock$line_number, sep = "|"))) {
+    stop("Lockfile ", path, " has duplicate component/line rows.", call. = FALSE)
+  }
+  if (!all(lock$source_group %in% .pce_source_groups)) {
+    stop(
+      "Lockfile ", path, " has unknown source_group value(s): ",
+      paste(setdiff(unique(lock$source_group), .pce_source_groups),
+            collapse = ", "), ".",
+      call. = FALSE
+    )
+  }
+  if (any(lock$housing & !lock$market_based)) {
+    stop(
+      "Lockfile ", path, " flags a housing component as not market-based.",
+      call. = FALSE
+    )
+  }
+  if (any(lock$line_order <= 0L) || any(lock$price_line <= 0L)) {
+    stop("Lockfile ", path, " has non-positive line_order or price_line.",
+         call. = FALSE)
+  }
+  if (any(lock$is_price_source & is.na(lock$price_series_code))) {
+    stop(
+      "Lockfile ", path, " has a price source line without a price series code.",
+      call. = FALSE
+    )
+  }
+  if (anyNA(lock$nominal_series_code)) {
+    stop("Lockfile ", path, " has a missing nominal series code.", call. = FALSE)
+  }
+  data.table::setorder(lock, component_id, line_order)
+  invisible(lock)
+}
+
 .pce_crosswalk <- function() {
   cw <- data.table::fread(
     text = .pce_map_text,
@@ -241,8 +560,11 @@
     data.table = TRUE,
     strip.white = TRUE
   )
-  if (nrow(cw) != 192L) {
-    stop("Internal PCE crosswalk must contain 192 components.", call. = FALSE)
+  if (nrow(cw) != .pce_expected_components) {
+    stop(
+      "Internal PCE crosswalk must contain ", .pce_expected_components,
+      " components.", call. = FALSE
+    )
   }
   if (anyDuplicated(cw$component_id)) {
     stop("Internal PCE crosswalk has duplicated component_id values.", call. = FALSE)
@@ -250,7 +572,45 @@
   if (anyNA(cw$price_line)) {
     stop("Internal PCE crosswalk has missing price_line values.", call. = FALSE)
   }
+  if (!all(grepl("^pce_l[0-9]{3}(_l[0-9]{3})?$", cw$component_id))) {
+    stop("Internal PCE crosswalk has an invalid component_id.", call. = FALSE)
+  }
+  if (anyNA(cw$housing) || anyNA(cw$market_based)) {
+    stop("Internal PCE crosswalk has missing logical flags.", call. = FALSE)
+  }
+  if (any(cw$housing & !cw$market_based)) {
+    stop("Internal PCE crosswalk flags housing as not market-based.", call. = FALSE)
+  }
+  if (!all(cw$source_group %in% .pce_source_groups)) {
+    stop("Internal PCE crosswalk has an unknown source_group.", call. = FALSE)
+  }
+  if (any(!nzchar(trimws(cw$description))) ||
+      any(!nzchar(trimws(cw$dallas_name)))) {
+    stop("Internal PCE crosswalk has an empty description.", call. = FALSE)
+  }
+
   line_sets <- strsplit(cw$line_number, "+", fixed = TRUE)
+  line_int <- lapply(line_sets, function(x) {
+    suppressWarnings(as.integer(x))
+  })
+  bad <- vapply(line_int, function(x) {
+    anyNA(x) || !length(x) || any(x <= 0L) || anyDuplicated(x) > 0L
+  }, logical(1))
+  if (any(bad)) {
+    stop(
+      "Internal PCE crosswalk has an invalid line_number value for: ",
+      paste(cw$component_id[bad], collapse = ", "), ".",
+      call. = FALSE
+    )
+  }
+  canonical <- vapply(line_int, paste, character(1), collapse = "+")
+  if (any(canonical != cw$line_number)) {
+    stop(
+      "Internal PCE crosswalk line_number values must be ascending: ",
+      paste(cw$component_id[canonical != cw$line_number], collapse = ", "), ".",
+      call. = FALSE
+    )
+  }
   price_in_set <- mapply(
     function(pl, ls) as.character(pl) %in% ls,
     cw$price_line, line_sets
@@ -266,11 +626,35 @@
     ln <- as.integer(strsplit(line_number, "+", fixed = TRUE)[[1L]])
     list(line_number = ln, line_order = seq_along(ln))
   }, by = .(
-    component_id, component_line = line_number, description,
+    component_id, component_line = line_number, price_line, description,
     housing, market_based, source_group, dallas_name
   )]
+  lm[, is_price_source := line_number == price_line]
+  data.table::setcolorder(lm, c(
+    "component_id", "component_line", "line_number", "line_order",
+    "price_line", "is_price_source", "description", "housing",
+    "market_based", "source_group", "dallas_name"
+  ))
+  data.table::setorder(lm, component_id, line_order)
+  if (nrow(lm) != .pce_expected_bea_lines) {
+    stop(
+      "Internal PCE crosswalk expands to ", nrow(lm), " lines; expected ",
+      .pce_expected_bea_lines, ".",
+      call. = FALSE
+    )
+  }
   if (anyDuplicated(lm$line_number)) {
     stop("Internal PCE crosswalk assigns a BEA line to more than one component.", call. = FALSE)
+  }
+  price_counts <- lm[, .(
+    n_price = sum(is_price_source),
+    n_price_line = data.table::uniqueN(price_line)
+  ), by = component_id]
+  if (any(price_counts$n_price != 1L) || any(price_counts$n_price_line != 1L)) {
+    stop(
+      "Every component must have exactly one price source line.",
+      call. = FALSE
+    )
   }
   lm[]
 }
@@ -287,12 +671,18 @@
       arg, paste(missing, collapse = ", ")
     ), call. = FALSE)
   }
+  if (nrow(x) == 0L) {
+    stop(sprintf("`%s` must contain at least one observation.", arg), call. = FALSE)
+  }
 
   out <- x[, required, with = FALSE]
 
   line_number_int <- suppressWarnings(as.integer(as.character(out$line_number)))
-  if (anyNA(line_number_int)) {
-    stop(sprintf("`%s$line_number` must be coercible to integer.", arg), call. = FALSE)
+  if (anyNA(line_number_int) || any(line_number_int <= 0L)) {
+    stop(
+      sprintf("`%s$line_number` must contain positive integers.", arg),
+      call. = FALSE
+    )
   }
   out[, line_number := line_number_int]
 
@@ -324,8 +714,17 @@
     }
   }
   out[, value := as.numeric(value_num)]
-  out[, series_code := as.character(series_code)]
-  out[, description := as.character(description)]
+  out[, series_code := trimws(as.character(series_code))]
+  out[, description := trimws(as.character(description))]
+
+  if (anyNA(out$series_code) || any(!nzchar(out$series_code))) {
+    stop(sprintf("`%s$series_code` must not contain missing values.", arg),
+         call. = FALSE)
+  }
+  if (anyNA(out$description) || any(!nzchar(out$description))) {
+    stop(sprintf("`%s$description` must not contain missing values.", arg),
+         call. = FALSE)
+  }
 
   duplicates <- out[, .N, by = .(line_number, date)][N > 1L]
   if (nrow(duplicates)) {
@@ -334,7 +733,905 @@
       arg, duplicates$line_number[1L], format(duplicates$date[1L])
     ), call. = FALSE)
   }
+
+  metadata <- unique(out[, .(line_number, description, series_code)])
+  conflicts <- metadata[, .(
+    n_descriptions = data.table::uniqueN(description),
+    n_codes = data.table::uniqueN(series_code)
+  ), by = line_number][n_descriptions > 1L | n_codes > 1L]
+  if (nrow(conflicts)) {
+    first <- conflicts[1L]
+    stop(sprintf(
+      paste0(
+        "`%s` has conflicting descriptions or series codes within line %d; ",
+        "each BEA line must have one stable description and code."
+      ),
+      arg, first$line_number
+    ), call. = FALSE)
+  }
   out[]
+}
+
+.pce_line_inventory <- function(x, table) {
+  meta <- unique(x[, .(line_number, description, series_code)])
+  conflicts <- meta[, .(
+    n_descriptions = data.table::uniqueN(description),
+    n_codes = data.table::uniqueN(series_code)
+  ), by = line_number][n_descriptions > 1L | n_codes > 1L]
+  if (nrow(conflicts)) {
+    stop(
+      "Cannot build a ", table, " line lock: line ",
+      conflicts$line_number[1L],
+      " has more than one description or series code.",
+      call. = FALSE
+    )
+  }
+  data.table::setorder(meta, line_number)
+  meta[, table := table]
+  data.table::setcolorder(
+    meta, c("table", "line_number", "description", "series_code")
+  )
+  meta[]
+}
+
+.pce_format_value <- function(x) {
+  if (is.logical(x)) {
+    return(ifelse(is.na(x), "NA", ifelse(x, "TRUE", "FALSE")))
+  }
+  ifelse(is.na(x), "NA", as.character(x))
+}
+
+.pce_line_lock_diff <- function(lock, current, table_id, max_show = 20L) {
+  old <- lock[lock$table == table_id, .(line_number, description, series_code)]
+  new <- current[
+    current$table == table_id,
+    .(line_number, description, series_code)
+  ]
+  if (!nrow(old) && !nrow(new)) return(character())
+  if (!nrow(old)) {
+    return(sprintf(
+      "  %s has no locked lines; the current table has %d.",
+      table_id, nrow(new)
+    ))
+  }
+  if (!nrow(new)) {
+    return(sprintf(
+      "  %s has %d locked lines; the current table has none.",
+      table_id, nrow(old)
+    ))
+  }
+
+  common <- merge(
+    old, new,
+    by = "line_number", suffixes = c(".lock", ".current"), sort = FALSE
+  )
+  renamed <- common[description.lock != description.current]
+  recoded <- common[series_code.lock != series_code.current]
+  removed <- old[!old$line_number %in% new$line_number]
+  added <- new[!new$line_number %in% old$line_number]
+
+  issues <- character()
+  add_examples <- function(dt, line_fun, noun) {
+    if (!nrow(dt)) return(character())
+    show <- utils::head(dt, max_show)
+    out <- line_fun(show)
+    if (nrow(dt) > nrow(show)) {
+      out <- c(out, sprintf("  ... and %d more %s.", nrow(dt) - nrow(show), noun))
+    }
+    out
+  }
+
+  issues <- c(issues, add_examples(
+    renamed,
+    function(x) sprintf(
+      "  Renamed line %d (%s): lock %s -> current %s.",
+      x$line_number, table_id, x$description.lock, x$description.current
+    ),
+    "renamed line(s)"
+  ))
+  issues <- c(issues, add_examples(
+    recoded,
+    function(x) sprintf(
+      "  Recoded line %d (%s): lock %s -> current %s.",
+      x$line_number, table_id, x$series_code.lock, x$series_code.current
+    ),
+    "recoded line(s)"
+  ))
+  issues <- c(issues, add_examples(
+    removed,
+    function(x) sprintf(
+      "  Removed line %d (%s): %s [%s].",
+      x$line_number, table_id, x$description, x$series_code
+    ),
+    "removed line(s)"
+  ))
+  issues <- c(issues, add_examples(
+    added,
+    function(x) sprintf(
+      "  Added line %d (%s): %s [%s].",
+      x$line_number, table_id, x$description, x$series_code
+    ),
+    "added line(s)"
+  ))
+
+  if (nrow(removed) && nrow(added)) {
+    renumbered <- merge(
+      removed[, .(
+        old_line = line_number,
+        old_description = description,
+        series_code
+      )],
+      added[, .(
+        new_line = line_number,
+        new_description = description,
+        series_code
+      )],
+      by = "series_code", sort = FALSE
+    )
+    issues <- c(issues, add_examples(
+      renumbered,
+      function(x) sprintf(
+        paste0(
+          "  Possible renumbering (%s): line %d %s [%s] -> ",
+          "line %d %s [%s]."
+        ),
+        table_id, x$old_line, x$old_description, x$series_code,
+        x$new_line, x$new_description, x$series_code
+      ),
+      "possible renumbering pair(s)"
+    ))
+  }
+  issues
+}
+
+.pce_assert_line_inventory <- function(lock, p, n, paths) {
+  price_inventory <- .pce_line_inventory(p, "U20404")
+  nominal_inventory <- .pce_line_inventory(n, "U20405")
+  issues <- c(
+    .pce_line_lock_diff(lock, price_inventory, "U20404"),
+    .pce_line_lock_diff(lock, nominal_inventory, "U20405")
+  )
+  if (length(issues)) {
+    stop(paste(c(
+      paste0("BEA line inventory does not match the reviewed lockfile: ",
+             paths$bea_line_lock),
+      issues,
+      "",
+      "BEA line additions, removals, renumbering, renames, and series-code changes",
+      "must be reviewed before the component panel is rebuilt.",
+      "If the change is intended, run update_bea_line_locks(price, nominal) and",
+      "commit the regenerated lockfiles."
+    ), collapse = "\n"), call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
+.pce_validate_date_grid <- function(p, n) {
+  dates_price <- sort(unique(p$date))
+  dates_nominal <- sort(unique(n$date))
+  if (!length(dates_price) || !length(dates_nominal)) {
+    stop("`price` and `nominal` must contain at least one month.",
+         call. = FALSE)
+  }
+  if (any(format(dates_price, "%d") != "01") ||
+      any(format(dates_nominal, "%d") != "01")) {
+    stop(
+      "BEA monthly inputs must be dated on the first day of a calendar month.",
+      call. = FALSE
+    )
+  }
+
+  max_price <- max(dates_price)
+  max_nominal <- max(dates_nominal)
+  if (as.numeric(max_price) != as.numeric(max_nominal)) {
+    stop(sprintf(
+      paste0(
+        "Strict max-date equality failed: `price` ends on %s but ",
+        "`nominal` ends on %s."
+      ),
+      format(max_price), format(max_nominal)
+    ), call. = FALSE)
+  }
+  if (length(dates_price) != length(dates_nominal) ||
+      any(as.numeric(dates_price) != as.numeric(dates_nominal))) {
+    only_price <- setdiff(dates_price, dates_nominal)
+    only_nominal <- setdiff(dates_nominal, dates_price)
+    stop(paste(c(
+      "`price` and `nominal` must cover exactly the same months.",
+      if (length(only_price)) {
+        paste0("  Only in `price`: ",
+               paste(format(head(only_price, 6L)), collapse = ", "))
+      } else "",
+      if (length(only_nominal)) {
+        paste0("  Only in `nominal`: ",
+               paste(format(head(only_nominal, 6L)), collapse = ", "))
+      } else ""
+    ), collapse = "\n"), call. = FALSE)
+  }
+
+  month_id <- .pce_month_index(dates_price)
+  if (length(month_id) > 1L && any(diff(month_id) != 1L)) {
+    at <- which(diff(month_id) != 1L)[1L]
+    stop(sprintf(
+      "Monthly coverage is not contiguous: a month is missing between %s and %s.",
+      format(dates_price[at]), format(dates_price[at + 1L])
+    ), call. = FALSE)
+  }
+
+  check_gaps <- function(x, label) {
+    ordered <- x[order(line_number, date)]
+    gaps <- ordered[, .(
+      line_number,
+      date,
+      gap = c(NA_integer_, diff(.pce_month_index(date)))
+    ), by = line_number]
+    bad <- gaps[!is.na(gap) & gap != 1L]
+    if (nrow(bad)) {
+      stop(sprintf(
+        paste0(
+          "`%s` is not monthly-contiguous for line %d: a month is missing ",
+          "before %s."
+        ),
+        label, bad$line_number[1L], format(bad$date[1L])
+      ), call. = FALSE)
+    }
+    invisible(TRUE)
+  }
+  check_gaps(p, "price")
+  check_gaps(n, "nominal")
+  invisible(dates_price)
+}
+
+.pce_month_index <- function(x) {
+  as.integer(format(x, "%Y")) * 12L + as.integer(format(x, "%m"))
+}
+
+.pce_validate_line_coverage <- function(x, dates, required, label, role) {
+  required <- sort(unique(as.integer(required)))
+  if (!length(required)) return(invisible(TRUE))
+  have <- unique(x[line_number %in% required, .(line_number, date)])
+  grid <- data.table::data.table(
+    line_number = rep(required, each = length(dates)),
+    date = rep(dates, times = length(required))
+  )
+  missing <- data.table::fsetdiff(grid, have)
+  if (nrow(missing)) {
+    stop(sprintf(
+      paste0(
+        "`%s` is missing %d month(s) for %s lines (first: line %d at %s). ",
+        "Every %s line must cover the full date range."
+      ),
+      label, nrow(missing), role, missing$line_number[1L],
+      format(missing$date[1L]), role
+    ), call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
+.pce_check_identity <- function(n, spec,
+                                tolerance = .pce_identity_tolerance) {
+  lines <- c(spec$parent, spec$children)
+  missing <- setdiff(lines, unique(n$line_number))
+  if (length(missing)) {
+    stop(sprintf(
+      "Cannot check %s: nominal line(s) %s are missing.",
+      spec$label, paste(missing, collapse = ", ")
+    ), call. = FALSE)
+  }
+
+  parent <- n[line_number == spec$parent, .(date, parent_value = value)]
+  child <- n[line_number %in% spec$children, .(
+    child_value = sum(value),
+    child_lines = data.table::uniqueN(line_number)
+  ), by = date]
+  if (any(child$child_lines != length(spec$children))) {
+    stop(sprintf(
+      "Cannot check %s: one or more child lines have missing months.",
+      spec$label
+    ), call. = FALSE)
+  }
+  checked <- merge(parent, child, by = "date", all = TRUE, sort = TRUE)
+  checked[, residual := parent_value - child_value]
+  bad <- checked[is.na(residual) | abs(residual) > tolerance]
+  if (nrow(bad)) {
+    worst <- bad[which.max(abs(residual))]
+    stop(sprintf(
+      paste0(
+        "Accounting identity failed: %s.\n",
+        "  Largest absolute residual: %s (tolerance %s), first failing month: %s.\n",
+        "  Failing months: %d of %d."
+      ),
+      spec$label,
+      formatC(worst$residual, format = "f", big.mark = ",", digits = 0),
+      formatC(tolerance, format = "f", big.mark = ",", digits = 0),
+      format(worst$date),
+      nrow(bad), nrow(checked)
+    ), call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
+.pce_validate_accounting_identities <- function(n) {
+  for (spec in .pce_identity_specs) {
+    .pce_check_identity(n, spec)
+  }
+  invisible(TRUE)
+}
+
+.pce_validate_crosswalk_structure <- function(cw, lm, lock, bea_lock,
+                                               lock_path) {
+  issues <- character()
+  add <- function(x) issues <<- c(issues, x)
+
+  if (nrow(cw) != .pce_expected_components ||
+      nrow(lm) != .pce_expected_bea_lines ||
+      data.table::uniqueN(lm$line_number) != .pce_expected_bea_lines) {
+    add(sprintf(
+      "  Internal map expands to %d components and %d lines; expected %d and %d.",
+      data.table::uniqueN(lm$component_id), nrow(lm),
+      .pce_expected_components, .pce_expected_bea_lines
+    ))
+  }
+  if (nrow(lock) != .pce_expected_bea_lines ||
+      data.table::uniqueN(lock$component_id) != .pce_expected_components) {
+    add(sprintf(
+      "  Lock has %d rows and %d components; expected %d and %d.",
+      nrow(lock), data.table::uniqueN(lock$component_id),
+      .pce_expected_bea_lines, .pce_expected_components
+    ))
+  }
+
+  expected <- lm[, .(
+    component_id, component_line, line_number, line_order, price_line,
+    is_price_source, component_description = description,
+    housing, market_based, source_group, dallas_name
+  )]
+  expected_key <- paste(expected$component_id, expected$line_number, sep = "\r")
+  lock_key <- paste(lock$component_id, lock$line_number, sep = "\r")
+
+  missing <- expected[!expected_key %in% lock_key]
+  if (nrow(missing)) {
+    show <- utils::head(missing, 10L)
+    add(sprintf(
+      "  Missing lock row(s): component %s line %d.",
+      show$component_id, show$line_number
+    ))
+    if (nrow(missing) > nrow(show)) {
+      add(sprintf("  ... and %d more missing rows.", nrow(missing) - nrow(show)))
+    }
+  }
+  extra <- lock[!lock_key %in% expected_key]
+  if (nrow(extra)) {
+    show <- utils::head(extra, 10L)
+    add(sprintf(
+      "  Unexpected lock row(s): component %s line %d.",
+      show$component_id, show$line_number
+    ))
+    if (nrow(extra) > nrow(show)) {
+      add(sprintf("  ... and %d more unexpected rows.", nrow(extra) - nrow(show)))
+    }
+  }
+
+  common <- intersect(expected_key, lock_key)
+  if (length(common)) {
+    exp <- expected[match(common, expected_key)]
+    cur <- lock[match(common, lock_key)]
+    fields <- c(
+      "component_line", "line_order", "price_line", "is_price_source",
+      "component_description", "housing", "market_based", "source_group",
+      "dallas_name"
+    )
+    for (field in fields) {
+      a <- exp[[field]]
+      b <- cur[[field]]
+      same <- (is.na(a) & is.na(b)) |
+        (!is.na(a) & !is.na(b) & as.character(a) == as.character(b))
+      bad <- which(!same)
+      if (length(bad)) {
+        show <- utils::head(bad, 10L)
+        add(sprintf(
+          "  `%s` mismatch for component %s line %d: expected %s, lock has %s.",
+          field, exp$component_id[show], exp$line_number[show],
+          .pce_format_value(a[show]), .pce_format_value(b[show])
+        ))
+        if (length(bad) > length(show)) {
+          add(sprintf("  ... and %d more `%s` mismatches.",
+                      length(bad) - length(show), field))
+        }
+      }
+    }
+  }
+
+  canonical <- lm[, .(
+    component_line = component_line[1L],
+    expected_line = paste(line_number, collapse = "+")
+  ), by = component_id]
+  bad <- canonical[component_line != expected_line]
+  if (nrow(bad)) {
+    add(sprintf(
+      "  component_line %s should be %s for component %s.",
+      bad$component_line, bad$expected_line, bad$component_id
+    ))
+  }
+
+  bad <- lock[is_price_source & line_number != price_line]
+  if (nrow(bad)) {
+    add(sprintf(
+      "  Price source line %d does not equal price_line %d for component %s.",
+      bad$line_number, bad$price_line, bad$component_id
+    ))
+  }
+  price_counts <- lock[, .(
+    n_price = sum(is_price_source),
+    n_price_lines = data.table::uniqueN(price_line)
+  ), by = component_id]
+  bad <- price_counts[n_price != 1L | n_price_lines != 1L]
+  if (nrow(bad)) {
+    add(sprintf(
+      "  Component %s has %d price source rows; expected exactly one.",
+      bad$component_id, bad$n_price
+    ))
+  }
+  bad <- lock[, .(
+    ok = identical(line_order, seq_len(.N))
+  ), by = component_id][ok == FALSE]
+  if (nrow(bad)) {
+    add(sprintf("  line_order is not contiguous for component %s.", bad$component_id))
+  }
+
+  flag_lines <- sort(unique(lock[housing == TRUE, line_number]))
+  if (!identical(flag_lines, .pce_housing_lines)) {
+    add(sprintf(
+      "  Housing flag covers line(s) %s; expected %s.",
+      paste(flag_lines, collapse = ", "),
+      paste(.pce_housing_lines, collapse = ", ")
+    ))
+  }
+  n_housing <- data.table::uniqueN(lock[housing == TRUE, component_id])
+  if (n_housing != .pce_expected_housing_components) {
+    add(sprintf(
+      "  Housing flag covers %d components; expected %d.",
+      n_housing, .pce_expected_housing_components
+    ))
+  }
+  n_market <- data.table::uniqueN(lock[market_based == TRUE, component_id])
+  if (n_market != .pce_expected_market_components) {
+    add(sprintf(
+      "  Market-based flag covers %d components; expected %d.",
+      n_market, .pce_expected_market_components
+    ))
+  }
+
+  nominal_lock <- bea_lock[table == "U20405"]
+  price_lock <- bea_lock[table == "U20404"]
+  nominal_index <- match(lock$line_number, nominal_lock$line_number)
+  if (anyNA(nominal_index)) {
+    add(sprintf(
+      "  Crosswalk line(s) %s are absent from the nominal line lock.",
+      paste(lock$line_number[is.na(nominal_index)], collapse = ", ")
+    ))
+  } else {
+    bad <- which(
+      lock$line_description != nominal_lock$description[nominal_index] |
+        lock$nominal_series_code != nominal_lock$series_code[nominal_index]
+    )
+    if (length(bad)) {
+      show <- utils::head(bad, 10L)
+      add(sprintf(
+        paste0(
+          "  Nominal metadata for line %d differs from the line lock: ",
+          "lock has %s [%s], crosswalk has %s [%s]."
+        ),
+        lock$line_number[show],
+        nominal_lock$description[nominal_index[show]],
+        nominal_lock$series_code[nominal_index[show]],
+        lock$line_description[show],
+        lock$nominal_series_code[show]
+      ))
+    }
+  }
+
+  price_index <- match(lock$line_number, price_lock$line_number)
+  has_price <- !is.na(price_index)
+  if (any(lock$is_price_source & !has_price)) {
+    add(sprintf(
+      "  Price source line(s) %s are absent from the price line lock.",
+      paste(lock$line_number[lock$is_price_source & !has_price],
+            collapse = ", ")
+    ))
+  }
+  if (any(has_price)) {
+    bad <- which(
+      has_price & (
+        is.na(lock$price_series_code) |
+          lock$price_series_code != price_lock$series_code[price_index] |
+          lock$line_description != price_lock$description[price_index]
+      )
+    )
+    if (length(bad)) {
+      show <- utils::head(bad, 10L)
+      add(sprintf(
+        paste0(
+          "  Price metadata for line %d differs from the line lock: ",
+          "lock has %s [%s], crosswalk has %s [%s]."
+        ),
+        lock$line_number[show],
+        price_lock$description[price_index[show]],
+        price_lock$series_code[price_index[show]],
+        lock$line_description[show],
+        .pce_format_value(lock$price_series_code[show])
+      ))
+    }
+  }
+  if (any(!has_price & !is.na(lock$price_series_code))) {
+    add(sprintf(
+      paste0(
+        "  Crosswalk has a price series code but the line lock has no price ",
+        "line for %s."
+      ),
+      paste(lock$line_number[!has_price & !is.na(lock$price_series_code)],
+            collapse = ", ")
+    ))
+  }
+
+  if (length(issues)) {
+    show <- utils::head(issues, 80L)
+    if (length(issues) > length(show)) {
+      show <- c(show, sprintf("  ... and %d more lock problem(s).",
+                              length(issues) - length(show)))
+    }
+    stop(paste(c(
+      paste0("Crosswalk lock does not match the confirmed component mapping (",
+             lock_path, ")."),
+      show,
+      "",
+      "Review the component mapping and lockfiles. If the change is intended,",
+      "run update_bea_line_locks(price, nominal) and commit the new locks."
+    ), collapse = "\n"), call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
+.pce_validate_crosswalk_data <- function(lock, p, n, lock_path) {
+  issues <- character()
+  add <- function(x) issues <<- c(issues, x)
+
+  nominal_meta <- unique(n[, .(line_number, description, series_code)])
+  price_meta <- unique(p[, .(line_number, description, series_code)])
+
+  nominal_index <- match(lock$line_number, nominal_meta$line_number)
+  if (anyNA(nominal_index)) {
+    add(sprintf(
+      "  Mapped line(s) %s are missing from `nominal`.",
+      paste(lock$line_number[is.na(nominal_index)], collapse = ", ")
+    ))
+  } else {
+    bad <- which(
+      lock$line_description != nominal_meta$description[nominal_index] |
+        lock$nominal_series_code != nominal_meta$series_code[nominal_index]
+    )
+    if (length(bad)) {
+      show <- utils::head(bad, 10L)
+      add(sprintf(
+        paste0(
+          "  Nominal line %d: lock expects %s [%s], current data has %s [%s]."
+        ),
+        lock$line_number[show],
+        lock$line_description[show], lock$nominal_series_code[show],
+        nominal_meta$description[nominal_index[show]],
+        nominal_meta$series_code[nominal_index[show]]
+      ))
+    }
+  }
+
+  price_index <- match(lock$line_number, price_meta$line_number)
+  has_price <- !is.na(price_index)
+  if (any(lock$is_price_source & !has_price)) {
+    add(sprintf(
+      "  Price source line(s) %s are missing from `price`.",
+      paste(lock$line_number[lock$is_price_source & !has_price],
+            collapse = ", ")
+    ))
+  }
+  if (any(has_price)) {
+    bad <- which(
+      has_price & (
+        is.na(lock$price_series_code) |
+          lock$price_series_code != price_meta$series_code[price_index] |
+          lock$line_description != price_meta$description[price_index]
+      )
+    )
+    if (length(bad)) {
+      show <- utils::head(bad, 10L)
+      add(sprintf(
+        paste0(
+          "  Price line %d: lock expects %s [%s], current data has %s [%s]."
+        ),
+        lock$line_number[show],
+        lock$line_description[show],
+        .pce_format_value(lock$price_series_code[show]),
+        price_meta$description[price_index[show]],
+        price_meta$series_code[price_index[show]]
+      ))
+    }
+  }
+  if (any(!has_price & !is.na(lock$price_series_code))) {
+    add(sprintf(
+      paste0(
+        "  Crosswalk has a price series code for line %s but current `price` ",
+        "has no such line."
+      ),
+      paste(lock$line_number[!has_price & !is.na(lock$price_series_code)],
+            collapse = ", ")
+    ))
+  }
+
+  line_counts <- lock[, .N, by = component_id]
+  single <- lock[component_id %in% line_counts[N == 1L]$component_id]
+  normalize <- function(x) gsub("[[:space:]]+", " ", tolower(trimws(x)))
+  compatible <- startsWith(
+    normalize(single$line_description), normalize(single$component_description)
+  ) | startsWith(
+    normalize(single$component_description), normalize(single$line_description)
+  )
+  if (any(!compatible)) {
+    bad <- single[!compatible]
+    show <- utils::head(bad, 10L)
+    add(sprintf(
+      paste0(
+        "  Component %s description is not compatible with BEA line %d ",
+        "description (%s vs %s)."
+      ),
+      show$component_id, show$line_number,
+      show$component_description, show$line_description
+    ))
+  }
+
+  if (length(issues)) {
+    show <- utils::head(issues, 80L)
+    if (length(issues) > length(show)) {
+      show <- c(show, sprintf("  ... and %d more mapped-line problem(s).",
+                              length(issues) - length(show)))
+    }
+    stop(paste(c(
+      paste0("Mapped component descriptions or series codes do not match ",
+             "current BEA data (", lock_path, ")."),
+      show,
+      "",
+      "Review the mapping. If the BEA change is intended, update the mapping",
+      "and run update_bea_line_locks(price, nominal), then commit the locks."
+    ), collapse = "\n"), call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
+.pce_validate_panel <- function(panel, n, lock, dates) {
+  if (nrow(panel) != .pce_expected_components * length(dates)) {
+    stop(sprintf(
+      "Panel has %d rows; expected %d components x %d months = %d.",
+      nrow(panel), .pce_expected_components, length(dates),
+      .pce_expected_components * length(dates)
+    ), call. = FALSE)
+  }
+  if (data.table::uniqueN(panel$component_id) != .pce_expected_components) {
+    stop("Panel does not contain the expected 192 components.", call. = FALSE)
+  }
+  component_months <- panel[, .N, by = component_id]
+  date_components <- panel[, .N, by = date]
+  if (any(component_months$N != length(dates)) ||
+      any(date_components$N != .pce_expected_components)) {
+    stop(
+      "Panel is not a complete component-by-month rectangle.",
+      call. = FALSE
+    )
+  }
+  if (anyNA(panel$price) || anyNA(panel$nominal)) {
+    stop("Panel contains missing price or nominal values.", call. = FALSE)
+  }
+  for (flag in c("housing", "market_based")) {
+    if (!is.logical(panel[[flag]]) || anyNA(panel[[flag]])) {
+      stop(sprintf("Panel `%s` must be a non-missing logical column.", flag),
+           call. = FALSE)
+    }
+  }
+  if (any(panel$housing & !panel$market_based)) {
+    stop("Panel flags a housing component as not market-based.", call. = FALSE)
+  }
+  if (!all(panel$source_group %in% .pce_source_groups)) {
+    stop("Panel has an unknown source_group value.", call. = FALSE)
+  }
+  panel_dates <- sort(unique(panel$date))
+  if (length(panel_dates) != length(dates) ||
+      any(as.numeric(panel_dates) != as.numeric(dates))) {
+    stop("Panel dates do not match the complete BEA monthly grid.",
+         call. = FALSE)
+  }
+  if (as.numeric(max(panel$date)) != as.numeric(max(n$date))) {
+    stop(sprintf(
+      paste0(
+        "Strict max-date equality failed: panel ends on %s but nominal BEA ",
+        "data end on %s."
+      ),
+      format(max(panel$date)), format(max(n$date))
+    ), call. = FALSE)
+  }
+
+  lock_info <- unique(lock[, .(
+    component_id, component_line, component_description,
+    housing, market_based, source_group
+  )])
+  panel_info <- unique(panel[, .(
+    component_id,
+    panel_line = line_number,
+    panel_description = description,
+    panel_housing = housing,
+    panel_market_based = market_based,
+    panel_source_group = source_group
+  )])
+  info <- merge(lock_info, panel_info, by = "component_id", all = TRUE,
+                sort = FALSE)
+  if (nrow(info) != .pce_expected_components || anyNA(info$component_id) ||
+      anyNA(info$component_line) || anyNA(info$panel_line) ||
+      anyNA(info$component_description) || anyNA(info$panel_description) ||
+      anyNA(info$housing) || anyNA(info$panel_housing) ||
+      anyNA(info$market_based) || anyNA(info$panel_market_based) ||
+      anyNA(info$source_group) || anyNA(info$panel_source_group)) {
+    stop("Panel components do not match the crosswalk lock.", call. = FALSE)
+  }
+  bad <- info[
+    component_line != panel_line |
+      component_description != panel_description |
+      housing != panel_housing |
+      market_based != panel_market_based |
+      source_group != panel_source_group
+  ]
+  if (nrow(bad)) {
+    first <- bad[1L]
+    stop(sprintf(
+      paste0(
+        "Panel metadata does not match the crosswalk lock for component %s ",
+        "(line %s vs %s, description/flags differ)."
+      ),
+      first$component_id, first$component_line, first$panel_line
+    ), call. = FALSE)
+  }
+
+  expected_codes <- lock[, {
+    price_code <- paste(
+      unique(price_series_code[is_price_source]), collapse = "+"
+    )
+    nominal_code <- paste(unique(nominal_series_code), collapse = "+")
+    list(
+      expected_series_code = if (identical(price_code, nominal_code)) {
+        price_code
+      } else {
+        paste(price_code, nominal_code, sep = "|")
+      }
+    )
+  }, by = component_id]
+  actual_codes <- unique(panel[, .(component_id, series_code)])
+  codes <- merge(expected_codes, actual_codes, by = "component_id",
+                 all = TRUE, sort = FALSE)
+  bad <- codes[
+    is.na(series_code) | is.na(expected_series_code) |
+      series_code != expected_series_code
+  ]
+  if (nrow(bad)) {
+    first <- bad[1L]
+    stop(sprintf(
+      paste0(
+        "Component series code for %s is %s; the crosswalk lock expects %s. ",
+        "Merged lines must keep the price|nominal code construction."
+      ),
+      first$component_id,
+      .pce_format_value(first$series_code),
+      .pce_format_value(first$expected_series_code)
+    ), call. = FALSE)
+  }
+
+  required <- c(1L, .pce_excluded_lines)
+  missing <- setdiff(required, unique(n$line_number))
+  if (length(missing)) {
+    stop(sprintf(
+      "Cannot check PCE coverage: nominal line(s) %s are missing.",
+      paste(missing, collapse = ", ")
+    ), call. = FALSE)
+  }
+  total <- n[line_number == 1L, .(date, pce_total = value)]
+  excluded <- n[line_number %in% .pce_excluded_lines, .(
+    excluded_nominal = sum(value),
+    n_excluded = data.table::uniqueN(line_number)
+  ), by = date]
+  if (any(excluded$n_excluded != length(.pce_excluded_lines))) {
+    stop("Cannot check PCE coverage: an excluded adjustment line is missing.",
+         call. = FALSE)
+  }
+  aggregate <- panel[, .(
+    component_nominal = sum(nominal),
+    market_nominal = sum(nominal[market_based]),
+    housing_nominal = sum(nominal[housing]),
+    nonmarket_nominal = sum(nominal[!market_based])
+  ), by = date]
+  if (any(aggregate$component_nominal <= 0)) {
+    stop("Panel nominal PCE is not strictly positive.", call. = FALSE)
+  }
+
+  coverage <- merge(
+    merge(total, excluded, by = "date", all = TRUE),
+    aggregate, by = "date", all = TRUE
+  )
+  coverage[, gap := component_nominal + excluded_nominal - pce_total]
+  tolerance <- .pce_coverage_tolerance + 1e-6 * abs(coverage$pce_total)
+  bad <- coverage[is.na(gap) | abs(gap) > tolerance]
+  if (nrow(bad)) {
+    worst <- bad[which.max(abs(gap))]
+    stop(sprintf(
+      paste0(
+        "Panel PCE coverage failed: sum(component nominal) + lines 145 + 333 ",
+        "differs from total PCE by %s in %s (tolerance %s).\n",
+        "  Failing months: %d of %d."
+      ),
+      formatC(worst$gap, format = "f", big.mark = ",", digits = 0),
+      format(worst$date),
+      formatC(max(tolerance), format = "f", big.mark = ",", digits = 0),
+      nrow(bad), nrow(coverage)
+    ), call. = FALSE)
+  }
+
+  raw_housing <- n[line_number %in% .pce_housing_lines, .(
+    raw_housing = sum(value),
+    n_housing_lines = data.table::uniqueN(line_number)
+  ), by = date]
+  if (any(raw_housing$n_housing_lines != length(.pce_housing_lines))) {
+    stop("Cannot check the housing aggregate: a housing line is missing.",
+         call. = FALSE)
+  }
+  coverage <- merge(coverage, raw_housing, by = "date", all.x = TRUE,
+                    sort = FALSE)
+  bad <- coverage[
+    is.na(raw_housing) |
+      abs(housing_nominal - raw_housing) > .pce_identity_tolerance
+  ]
+  if (nrow(bad)) {
+    worst <- bad[which.max(abs(housing_nominal - raw_housing))]
+    stop(sprintf(
+      paste0(
+        "Housing aggregate check failed: panel housing nominal differs from ",
+        "BEA lines 155 + 156 + 161 + 162 by %s in %s (tolerance %s)."
+      ),
+      formatC(worst$housing_nominal - worst$raw_housing,
+              format = "f", big.mark = ",", digits = 0),
+      format(worst$date),
+      .pce_identity_tolerance
+    ), call. = FALSE)
+  }
+
+  coverage[, `:=`(
+    market_share = market_nominal / component_nominal,
+    housing_share = housing_nominal / component_nominal
+  )]
+  bad <- coverage[
+    market_share < .pce_market_share_range[1L] |
+      market_share > .pce_market_share_range[2L] |
+      housing_share < .pce_housing_share_range[1L] |
+      housing_share > .pce_housing_share_range[2L] |
+      housing_nominal > market_nominal |
+      nonmarket_nominal <= 0
+  ]
+  if (nrow(bad)) {
+    stop(sprintf(
+      paste0(
+        "Market/housing aggregate shares are outside practical bounds: ",
+        "market %.3f-%.3f, housing %.3f-%.3f. Expected market [%.2f, %.2f] ",
+        "and housing [%.2f, %.2f]."
+      ),
+      min(coverage$market_share), max(coverage$market_share),
+      min(coverage$housing_share), max(coverage$housing_share),
+      .pce_market_share_range[1L], .pce_market_share_range[2L],
+      .pce_housing_share_range[1L], .pce_housing_share_range[2L]
+    ), call. = FALSE)
+  }
+  invisible(TRUE)
 }
 
 # Build the long component panel. `price` and `nominal` must be long BEA
@@ -343,7 +1640,8 @@
 # components with missing lines and allows NA component-date cells.
 # `series_code` is the designated price line's code; when the price and nominal
 # codes differ, both are returned as "price|nominal". Nominal codes for a
-# multi-line component are joined with "+".
+# multi-line component are joined with "+". Both BEA inputs are checked against
+# the tracked line and crosswalk locks before the panel is built.
 prepare_component_panel <- function(price, nominal, strict = TRUE) {
   if (!is.logical(strict) || length(strict) != 1L || is.na(strict)) {
     stop("`strict` must be a single non-missing logical (TRUE or FALSE).", call. = FALSE)
@@ -357,10 +1655,37 @@ prepare_component_panel <- function(price, nominal, strict = TRUE) {
 
   p <- .pce_prepare_input(price, "price")
   n <- .pce_prepare_input(nominal, "nominal")
+  n_all <- data.table::copy(n)
 
-  required_lines <- sort(unique(lm$line_number))
-  missing_price <- setdiff(required_lines, unique(p$line_number))
-  missing_nominal <- setdiff(required_lines, unique(n$line_number))
+  locks <- .pce_read_locks()
+  paths <- locks$paths
+  .pce_validate_bea_line_lock(locks$bea_line_lock, paths$bea_line_lock)
+  .pce_validate_crosswalk_lock_basic(
+    locks$crosswalk_lock, paths$crosswalk_lock
+  )
+  .pce_assert_line_inventory(locks$bea_line_lock, p, n, paths)
+  .pce_validate_crosswalk_structure(
+    cw, lm, locks$crosswalk_lock, locks$bea_line_lock,
+    paths$crosswalk_lock
+  )
+
+  dates <- .pce_validate_date_grid(p, n)
+  required_price <- sort(unique(lm[is_price_source == TRUE, line_number]))
+  required_nominal <- sort(unique(lm$line_number))
+  .pce_validate_line_coverage(
+    p, dates, required_price, "price", "price source"
+  )
+  .pce_validate_line_coverage(
+    n, dates, unique(c(required_nominal, 1L, .pce_excluded_lines)),
+    "nominal", "mapped, total, or adjustment"
+  )
+  .pce_validate_crosswalk_data(
+    locks$crosswalk_lock, p, n, paths$crosswalk_lock
+  )
+  .pce_validate_accounting_identities(n)
+
+  missing_price <- setdiff(required_price, unique(p$line_number))
+  missing_nominal <- setdiff(required_nominal, unique(n$line_number))
   if (length(missing_price) || length(missing_nominal)) {
     message <- paste0(
       "The inputs do not cover every BEA line in the crosswalk.",
@@ -418,16 +1743,6 @@ prepare_component_panel <- function(price, nominal, strict = TRUE) {
     nominal := NA_real_
   ]
   nominal_by_component[, c("nominal_lines", "component_lines") := NULL]
-
-  dates_price <- sort(unique(p$date))
-  dates_nominal <- sort(unique(n$date))
-  dates <- intersect(dates_price, dates_nominal)
-  if (!length(dates)) {
-    stop("`price` and `nominal` have no dates in common.", call. = FALSE)
-  }
-  if (length(dates) < length(dates_price) || length(dates) < length(dates_nominal)) {
-    warning("`price` and `nominal` have different date coverage; using their intersection.", call. = FALSE)
-  }
 
   grid <- data.table::CJ(
     component_id = comps$component_id,
@@ -487,13 +1802,207 @@ prepare_component_panel <- function(price, nominal, strict = TRUE) {
   ))
   data.table::setorder(out, date, component_id)
 
+  if (!nrow(incomplete)) {
+    .pce_validate_panel(out, n_all, locks$crosswalk_lock, dates)
+  }
+
   attr(out, "n_components") <- nrow(comps)
   attr(out, "n_bea_lines") <- nrow(lm)
   attr(out, "crosswalk") <- "BEA U20404/U20405; Dallas Fed 177 baseline; 192-component reconstruction; BEA market-based composition"
-  attr(out, "excluded_lines") <- c(145L, 333L)
-  attr(out, "excluded_line_reasons") <- c(
-    "145" = "netting of expenditures abroad",
-    "333" = "net foreign travel"
-  )
+  attr(out, "excluded_lines") <- .pce_excluded_lines
+  attr(out, "excluded_line_reasons") <- .pce_excluded_line_reasons
   out[]
+}
+
+# Deliberately accept the current BEA line inventory and component mapping.
+#
+# This is never called automatically. It regenerates the two tracked lockfiles
+# after manual review of a line addition, removal, renumbering, rename, or
+# series-code change:
+#   config/bea_line_lock.csv     all U20404 and U20405 lines
+#   config/crosswalk_lock.csv    all 194 expanded component lines
+#
+# `path` is a directory, resolved against the project root when relative. With
+# `dry_run = TRUE`, changes are reported without writing. Returns the generated
+# lock tables invisibly.
+update_bea_line_locks <- function(price, nominal, path = "config",
+                                  dry_run = FALSE) {
+  if (!is.logical(dry_run) || length(dry_run) != 1L || is.na(dry_run)) {
+    stop("`dry_run` must be a single non-missing logical (TRUE or FALSE).",
+         call. = FALSE)
+  }
+
+  cw <- .pce_crosswalk()
+  lm <- .pce_expand_lines(cw)
+  p <- .pce_prepare_input(price, "price")
+  n <- .pce_prepare_input(nominal, "nominal")
+  dates <- .pce_validate_date_grid(p, n)
+  .pce_validate_line_coverage(
+    p, dates,
+    sort(unique(lm[is_price_source == TRUE, line_number])),
+    "price", "price source"
+  )
+  .pce_validate_line_coverage(
+    n, dates,
+    unique(c(lm$line_number, 1L, .pce_excluded_lines)),
+    "nominal", "mapped, total, or adjustment"
+  )
+
+  bea_line_lock <- data.table::rbindlist(list(
+    .pce_line_inventory(p, "U20404"),
+    .pce_line_inventory(n, "U20405")
+  ), use.names = TRUE)
+  data.table::setorder(bea_line_lock, table, line_number)
+
+  crosswalk_lock <- .pce_build_crosswalk_lock(cw, lm, p, n)
+
+  paths <- .pce_lock_paths(path)
+  .pce_validate_bea_line_lock(bea_line_lock, paths$bea_line_lock)
+  .pce_validate_crosswalk_lock_basic(
+    crosswalk_lock, paths$crosswalk_lock
+  )
+  .pce_validate_crosswalk_structure(
+    cw, lm, crosswalk_lock, bea_line_lock, paths$crosswalk_lock
+  )
+  .pce_validate_crosswalk_data(
+    crosswalk_lock, p, n, paths$crosswalk_lock
+  )
+
+  old_lock <- tryCatch(
+    .pce_read_lock_file(
+      paths$bea_line_lock,
+      c("table", "line_number", "description", "series_code")
+    ),
+    error = function(e) NULL
+  )
+  if (is.null(old_lock)) {
+    message("No readable existing BEA line lock; the current line inventory ",
+            "will be recorded.")
+  } else {
+    price_inventory <- .pce_line_inventory(p, "U20404")
+    nominal_inventory <- .pce_line_inventory(n, "U20405")
+    changes <- c(
+      .pce_line_lock_diff(old_lock, price_inventory, "U20404"),
+      .pce_line_lock_diff(old_lock, nominal_inventory, "U20405")
+    )
+    if (length(changes)) {
+      message("BEA line inventory changes to accept:")
+      message(paste(changes, collapse = "\n"))
+    } else {
+      message("BEA line inventory is unchanged.")
+    }
+  }
+  message(sprintf(
+    "Crosswalk lock: %d components, %d expanded lines, data through %s.",
+    data.table::uniqueN(crosswalk_lock$component_id),
+    nrow(crosswalk_lock), format(max(dates))
+  ))
+
+  if (dry_run) {
+    message("Dry run only; lockfiles were not written.")
+  } else {
+    .pce_write_lock(bea_line_lock, paths$bea_line_lock)
+    .pce_write_lock(crosswalk_lock, paths$crosswalk_lock)
+    message("Wrote ", paths$bea_line_lock, " and ", paths$crosswalk_lock, ".")
+  }
+
+  invisible(list(
+    bea_line_lock = bea_line_lock,
+    crosswalk_lock = crosswalk_lock,
+    bea_line_lock_path = paths$bea_line_lock,
+    crosswalk_lock_path = paths$crosswalk_lock
+  ))
+}
+
+.pce_build_crosswalk_lock <- function(cw, lm, p, n) {
+  price_inventory <- .pce_line_inventory(p, "U20404")
+  nominal_inventory <- .pce_line_inventory(n, "U20405")
+
+  out <- merge(
+    lm,
+    price_inventory[, .(
+      line_number,
+      price_description = description,
+      price_series_code = series_code
+    )],
+    by = "line_number", all.x = TRUE, sort = FALSE
+  )
+  out <- merge(
+    out,
+    nominal_inventory[, .(
+      line_number,
+      line_description = description,
+      nominal_series_code = series_code
+    )],
+    by = "line_number", all.x = TRUE, sort = FALSE
+  )
+
+  if (anyNA(out$line_description) || anyNA(out$nominal_series_code)) {
+    missing <- out[is.na(line_description) | is.na(nominal_series_code),
+                   line_number]
+    stop(
+      "Cannot build crosswalk lock: mapped nominal line(s) ",
+      paste(missing, collapse = ", "),
+      " are missing or have conflicting metadata.",
+      call. = FALSE
+    )
+  }
+  if (any(out$is_price_source &
+          (is.na(out$price_series_code) | is.na(out$price_description)))) {
+    missing <- out[is_price_source &
+                     (is.na(price_series_code) | is.na(price_description)),
+                   line_number]
+    stop(
+      "Cannot build crosswalk lock: price source line(s) ",
+      paste(missing, collapse = ", "),
+      " are missing from the price table.",
+      call. = FALSE
+    )
+  }
+  has_price <- !is.na(out$price_description)
+  if (any(has_price & out$price_description != out$line_description)) {
+    bad <- out[has_price & price_description != line_description, line_number]
+    stop(
+      "Cannot build crosswalk lock: line(s) ",
+      paste(bad, collapse = ", "),
+      " have different price and nominal descriptions.",
+      call. = FALSE
+    )
+  }
+
+  out[, component_description := description]
+  out[, description := NULL]
+  out[, price_description := NULL]
+  data.table::setcolorder(out, c(
+    "component_id", "component_line", "line_number", "line_order",
+    "price_line", "is_price_source", "component_description",
+    "line_description", "price_series_code", "nominal_series_code",
+    "housing", "market_based", "source_group", "dallas_name"
+  ))
+  data.table::setorder(out, component_id, line_order)
+  out[]
+}
+
+.pce_write_lock <- function(dt, path) {
+  dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
+  if (!dir.exists(dirname(path))) {
+    stop("Could not create lock directory: ", dirname(path), call. = FALSE)
+  }
+  tmp <- tempfile(
+    paste0(basename(path), "."),
+    tmpdir = dirname(path),
+    fileext = ".tmp"
+  )
+  on.exit(unlink(tmp), add = TRUE)
+  tryCatch(
+    data.table::fwrite(dt, tmp, na = "NA"),
+    error = function(e) {
+      stop("Could not write lockfile ", path, ": ", conditionMessage(e),
+           call. = FALSE)
+    }
+  )
+  if (!file.copy(tmp, path, overwrite = TRUE)) {
+    stop("Could not replace lockfile ", path, call. = FALSE)
+  }
+  invisible(path)
 }

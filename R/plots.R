@@ -35,27 +35,52 @@
   note = "#8390A2"
 )
 
-.plots_status_levels <- c(
-  "Kept by both",
-  "Kept by 16%, trimmed by Dallas",
-  "Trimmed by both"
-)
-
 .plots_required_variants <- c(
   "tm16", "tm48", "median",
   "tm16_ex_housing", "tm16_market", "tm16_market_ex_housing"
 )
 
 .plots_start_month <- 2018L * 12L + 1L
-.plots_low_16 <- 0.08
-.plots_low_dallas <- 0.24
-# Dallas trims 31% from the top, leaving a 0.69 upper boundary.
-.plots_high_dallas <- 0.69
-.plots_high_16 <- 0.92
 .plots_y_limit <- 30
 
 .plots_stop <- function(...) {
   stop(..., call. = FALSE)
+}
+
+.plots_trim_spec <- function(variant) {
+  spec <- trim_specifications()[[variant]]
+  if (is.null(spec)) {
+    .plots_stop(sprintf("Unknown trim variant `%s`.", variant))
+  }
+  spec
+}
+
+.plots_trim_percent <- function(variant) {
+  spec <- .plots_trim_spec(variant)
+  100 * (spec$lower + spec$upper)
+}
+
+.plots_trim_label <- function(variant) {
+  sprintf("%.0f%%", .plots_trim_percent(variant))
+}
+
+.plots_trim_boundaries <- function() {
+  tm16 <- .plots_trim_spec("tm16")
+  dallas <- .plots_trim_spec("dallas_replication")
+  list(
+    low_16 = tm16$lower,
+    high_16 = 1 - tm16$upper,
+    low_dallas = dallas$lower,
+    high_dallas = 1 - dallas$upper
+  )
+}
+
+.plots_status_levels <- function() {
+  c(
+    "Kept by both",
+    sprintf("Kept by %s, trimmed by Dallas", .plots_trim_label("tm16")),
+    "Trimmed by both"
+  )
 }
 
 .plots_assert_dt <- function(x, name) {
@@ -356,13 +381,15 @@
   # Compare each component's cumulative-weight interval with the retained
   # intervals; boundary components are credited to every rule that keeps any
   # of their weight rather than being classified by their center alone.
+  trim_bounds <- .plots_trim_boundaries()
   overlap_16 <- pmax(
     0,
-    pmin(cumulative, .plots_high_16) - pmax(before, .plots_low_16)
+    pmin(cumulative, trim_bounds$high_16) - pmax(before, trim_bounds$low_16)
   )
   overlap_dallas <- pmax(
     0,
-    pmin(cumulative, .plots_high_dallas) - pmax(before, .plots_low_dallas)
+    pmin(cumulative, trim_bounds$high_dallas) -
+      pmax(before, trim_bounds$low_dallas)
   )
 
   tolerance <- 1e-12
@@ -370,12 +397,13 @@
     kept_16 = overlap_16 > tolerance,
     kept_dallas = overlap_dallas > tolerance
   )]
+  status_levels <- .plots_status_levels()
   dist[, status := data.table::fcase(
-    kept_16 & kept_dallas, .plots_status_levels[[1L]],
-    kept_16 & !kept_dallas, .plots_status_levels[[2L]],
-    default = .plots_status_levels[[3L]]
+    kept_16 & kept_dallas, status_levels[[1L]],
+    kept_16 & !kept_dallas, status_levels[[2L]],
+    default = status_levels[[3L]]
   )]
-  dist[, status := factor(status, levels = .plots_status_levels)]
+  dist[, status := factor(status, levels = status_levels)]
   dist[, date := as.Date(dist_date)]
 
   n_components <- data.table::uniqueN(dist[["component_id"]])
@@ -389,17 +417,23 @@
       dist[["annualized_pct"]][index]
     }
   }
+  trim16_label <- .plots_trim_label("tm16")
   cutoffs <- data.table::data.table(
-    boundary = c("16% low", "Dallas low", "Dallas high", "16% high"),
+    boundary = c(
+      sprintf("%s low", trim16_label),
+      "Dallas low",
+      "Dallas high",
+      sprintf("%s high", trim16_label)
+    ),
     position = 100 * c(
-      .plots_low_16, .plots_low_dallas,
-      .plots_high_dallas, .plots_high_16
+      trim_bounds$low_16, trim_bounds$low_dallas,
+      trim_bounds$high_dallas, trim_bounds$high_16
     ),
     value = c(
-      cutoff_value(.plots_low_16),
-      cutoff_value(.plots_low_dallas),
-      cutoff_value(.plots_high_dallas),
-      cutoff_value(.plots_high_16)
+      cutoff_value(trim_bounds$low_16),
+      cutoff_value(trim_bounds$low_dallas),
+      cutoff_value(trim_bounds$high_dallas),
+      cutoff_value(trim_bounds$high_16)
     )
   )
 
@@ -634,7 +668,8 @@
   cutoffs <- prepared[["cutoffs"]]
   n_components <- prepared[["n_components"]]
 
-  dist[, status := factor(status, levels = .plots_status_levels)]
+  status_levels <- .plots_status_levels()
+  dist[, status := factor(status, levels = status_levels)]
   # True annualized values remain in the data and CSV; only the drawn bar
   # height is capped so off-scale components do not spill outside the panel.
   dist[, bar_ymax := pmax(
@@ -647,13 +682,17 @@
       .plots_colors[["ea16"]],
       .plots_colors[["grey"]]
     ),
-    .plots_status_levels
+    status_levels
   )
 
+  trim16_label <- .plots_trim_label("tm16")
   label_rows <- data.table::data.table(
     x = cutoffs[["position"]],
     y = data.table::fifelse(
-      cutoffs[["boundary"]] %in% c("16% low", "16% high"),
+      cutoffs[["boundary"]] %in% c(
+        sprintf("%s low", trim16_label),
+        sprintf("%s high", trim16_label)
+      ),
       35.4, 31.9
     ),
     label = sprintf("%s: %+.1f%%", cutoffs[["boundary"]], cutoffs[["value"]])
@@ -664,8 +703,7 @@
   n_off_scale <- sum(off_scale)
   off_trimmed <- if (n_off_scale > 0L) {
     all(
-      as.character(dist[["status"]][off_scale]) ==
-        .plots_status_levels[[3L]]
+      as.character(dist[["status"]][off_scale]) == status_levels[[3L]]
     )
   } else {
     FALSE
@@ -725,8 +763,8 @@
     ) +
     ggplot2::scale_fill_manual(
       values = status_colours,
-      limits = .plots_status_levels,
-      breaks = .plots_status_levels,
+      limits = status_levels,
+      breaks = status_levels,
       drop = FALSE,
       name = NULL,
       guide = ggplot2::guide_legend(
@@ -824,8 +862,11 @@ create_all_figures <- function(measures, benchmarks, weighted_panel,
   )
   n_components <- distribution[["n_components"]]
   component_word <- if (n_components == 1L) "Component" else "Components"
+  trim16_label <- .plots_trim_label("tm16")
+  trim48_label <- .plots_trim_label("tm48")
   ea16_label <- sprintf(
-    "Employ America 16%% Trimmed Mean (%s %s)",
+    "Employ America %s Trimmed Mean (%s %s)",
+    trim16_label,
     format(n_components, big.mark = ","),
     component_word
   )
@@ -854,7 +895,11 @@ create_all_figures <- function(measures, benchmarks, weighted_panel,
   )
   spec_trim_ladder <- .plots_spec(
     series_key = c("tm16", "tm48", "median", "core"),
-    label = c("16% TM", "48% TM", "Median PCE", "Core PCE"),
+    label = c(
+      sprintf("%s TM", trim16_label),
+      sprintf("%s TM", trim48_label),
+      "Median PCE", "Core PCE"
+    ),
     source = c("measure", "measure", "measure", "benchmark"),
     colour = c(
       .plots_colors[["navy"]],
@@ -866,7 +911,11 @@ create_all_figures <- function(measures, benchmarks, weighted_panel,
   )
   spec_housing <- .plots_spec(
     series_key = c("tm16", "tm16_ex_housing", "core"),
-    label = c("16% TM", "16% TM, Ex-Housing", "Core PCE"),
+    label = c(
+      sprintf("%s TM", trim16_label),
+      sprintf("%s TM, Ex-Housing", trim16_label),
+      "Core PCE"
+    ),
     source = c("measure", "measure", "benchmark"),
     colour = c(
       .plots_colors[["ea16"]],
@@ -877,7 +926,11 @@ create_all_figures <- function(measures, benchmarks, weighted_panel,
   )
   spec_market <- .plots_spec(
     series_key = c("tm16", "tm16_market", "core"),
-    label = c("16% TM", "16% TM, Market-Based", "Core PCE"),
+    label = c(
+      sprintf("%s TM", trim16_label),
+      sprintf("%s TM, Market-Based", trim16_label),
+      "Core PCE"
+    ),
     source = c("measure", "measure", "benchmark"),
     colour = c(
       .plots_colors[["ea16"]],
@@ -891,8 +944,10 @@ create_all_figures <- function(measures, benchmarks, weighted_panel,
       "tm16", "tm16_ex_housing", "tm16_market_ex_housing", "core"
     ),
     label = c(
-      "16% TM", "16% TM, Ex-Housing",
-      "16% TM, Market-Based Ex-Housing", "Core PCE"
+      sprintf("%s TM", trim16_label),
+      sprintf("%s TM, Ex-Housing", trim16_label),
+      sprintf("%s TM, Market-Based Ex-Housing", trim16_label),
+      "Core PCE"
     ),
     source = c("measure", "measure", "measure", "benchmark"),
     colour = c(
@@ -912,28 +967,46 @@ create_all_figures <- function(measures, benchmarks, weighted_panel,
     ),
     "02_dallas_16_core" = list(
       spec = spec_dallas_16,
-      title = "Does a Symmetric 16% Trim Tell\na Different Story Than Dallas?",
-      subtitle = "Dallas Fed vs 16% Symmetric vs Core PCE, 12-Month % Change"
+      title = sprintf(
+        "Does a Symmetric %s Trim Tell\na Different Story Than Dallas?",
+        trim16_label
+      ),
+      subtitle = sprintf(
+        "Dallas Fed vs %s Symmetric vs Core PCE, 12-Month %% Change",
+        trim16_label
+      )
     ),
     "03_trim_ladder" = list(
       spec = spec_trim_ladder,
       title = "Does Wider Trimming\nMove the Signal?",
-      subtitle = "16% and 48% Trimmed Means, the Median, and Core PCE, 12-Month % Change"
+      subtitle = sprintf(
+        "%s and %s Trimmed Means, the Median, and Core PCE, 12-Month %% Change",
+        trim16_label, trim48_label
+      )
     ),
     "05_housing" = list(
       spec = spec_housing,
       title = "How Much Does Housing Matter\nfor the Trimmed Mean?",
-      subtitle = "16% Trim With vs Without Shelter Lines vs Core PCE, 12-Month % Change"
+      subtitle = sprintf(
+        "%s Trim With vs Without Shelter Lines vs Core PCE, 12-Month %% Change",
+        trim16_label
+      )
     ),
     "06_market_based" = list(
       spec = spec_market,
       title = "How Much Do Imputed and\nNon-Market Items Matter?",
-      subtitle = "16% Trim With vs Without Market-Based Exclusions vs Core PCE, 12-Month % Change"
+      subtitle = sprintf(
+        "%s Trim With vs Without Market-Based Exclusions vs Core PCE, 12-Month %% Change",
+        trim16_label
+      )
     ),
     "07_market_ex_housing" = list(
       spec = spec_market_ex_housing,
       title = "How Much Do Housing and Market-Based\nExclusions Matter Together?",
-      subtitle = "16% Trim With Both Sets of Exclusions vs Core PCE, 12-Month % Change"
+      subtitle = sprintf(
+        "%s Trim With Both Sets of Exclusions vs Core PCE, 12-Month %% Change",
+        trim16_label
+      )
     )
   )
 

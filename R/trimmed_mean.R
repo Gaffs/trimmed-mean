@@ -25,9 +25,11 @@
 # weight reaches 0.50. There is no averaging across the 50/50 boundary, and
 # zero-weight components are kept in the cumulative crossing.
 #
-# compute_variant() emits a complete monthly grid. Months present in the panel
-# keep their observed date; months missing inside the panel span use month-end
-# when every observed date is month-end, otherwise the first day of the month.
+# compute_variant() requires a complete rectangular monthly panel: every
+# component must appear in every calendar month of the panel span. Missing
+# months are an error because carrying the previous index forward would report
+# them as zero inflation and contaminate later year-over-year changes. Months
+# present in the panel keep their observed date.
 
 .assert_scalar_logical <- function(x, name) {
   if (!is.logical(x) || length(x) != 1L || is.na(x)) {
@@ -69,28 +71,91 @@
   100 * ((1 + x)^12 - 1)
 }
 
-.complete_month_grid <- function(dates) {
-  dates <- as.Date(dates)
-  month_id <- .year_month(dates)
-  month_range <- seq.int(min(month_id), max(month_id))
-  years <- (month_range - 1L) %/% 12L
-  months <- (month_range - 1L) %% 12L + 1L
-  grid_date <- as.Date(sprintf("%04d-%02d-01", years, months))
+.format_month_ids <- function(month_id) {
+  year <- (month_id - 1L) %/% 12L
+  month <- (month_id - 1L) %% 12L + 1L
+  sprintf("%04d-%02d", year, month)
+}
 
-  if (all(as.integer(format(dates + 1, "%d")) == 1L)) {
-    next_id <- month_range + 1L
-    next_years <- (next_id - 1L) %/% 12L
-    next_months <- (next_id - 1L) %% 12L + 1L
-    grid_date <- as.Date(sprintf(
-      "%04d-%02d-01",
-      next_years,
-      next_months
-    )) - 1
+.preview_values <- function(x, n = 6L) {
+  x <- as.character(x)
+  if (length(x) <= n) {
+    return(paste(x, collapse = ", "))
+  }
+  sprintf("%s, and %d more", paste(x[seq_len(n)], collapse = ", "),
+          length(x) - n)
+}
+
+# Production variants require complete rectangular coverage. A missing
+# component-month would be silently dropped from the distribution, and a
+# fully missing calendar month would become a carried-forward index that looks
+# like zero inflation and contaminates later year-over-year changes.
+.assert_complete_monthly_panel <- function(panel, context) {
+  month_id <- .year_month(panel[["date"]])
+  span <- seq.int(min(month_id), max(month_id))
+  observed <- sort(unique(month_id))
+  missing_months <- span[!span %in% observed]
+
+  if (length(missing_months) > 0L) {
+    stop(sprintf(
+      paste0(
+        "%s requires a complete monthly panel, but %d calendar month(s) in ",
+        "the panel span have no rows: %s. A missing month cannot be treated ",
+        "as 0%% inflation or a valid year-over-year change; repair the source ",
+        "panel before computing production variants."
+      ),
+      context,
+      length(missing_months),
+      .preview_values(.format_month_ids(missing_months))
+    ), call. = FALSE)
   }
 
-  grid <- data.table::data.table(month_id = month_range, date = grid_date)
-  observed <- unique(data.table::data.table(month_id = month_id, date = dates))
-  grid[observed, on = "month_id", date := i.date]
+  coverage <- unique(data.table::data.table(
+    component_id = panel[["component_id"]],
+    month_id = month_id
+  ))
+  gaps <- coverage[
+    ,
+    .(missing = list(setdiff(span, month_id))),
+    by = component_id
+  ]
+  gaps <- gaps[lengths(gaps[["missing"]]) > 0L]
+
+  if (nrow(gaps) > 0L) {
+    detail <- sprintf(
+      "%s (missing %s)",
+      as.character(gaps[["component_id"]]),
+      vapply(
+        gaps[["missing"]],
+        function(x) .preview_values(.format_month_ids(x), n = 3L),
+        character(1L)
+      )
+    )
+    stop(sprintf(
+      paste0(
+        "%s requires every component to be observed in every calendar month ",
+        "of the panel span; %d component(s) have missing months. Examples: ",
+        "%s. Missing component months would silently change the trimmed ",
+        "distribution and its weights; repair the source panel first."
+      ),
+      context,
+      nrow(gaps),
+      .preview_values(detail, n = 4L)
+    ), call. = FALSE)
+  }
+
+  invisible(TRUE)
+}
+
+# Build the sorted month grid for a panel that has passed the completeness
+# check, so every month in the span has an observed date.
+.complete_month_grid <- function(dates) {
+  dates <- as.Date(dates)
+  grid <- unique(data.table::data.table(
+    month_id = .year_month(dates),
+    date = as.Date(as.numeric(dates), origin = "1970-01-01")
+  ))
+  data.table::setorderv(grid, "month_id")
   grid
 }
 
@@ -421,6 +486,8 @@ trimmed_mean_detail <- function(x, w, lower, upper) {
 #' @return `panel` with normalized `fisher_weight` and decimal `pi` columns.
 #'   Components without the immediately preceding calendar month receive `NA`
 #'   for both columns; weights are normalized over the remaining components.
+#'   This function deliberately accepts incomplete histories so they can be
+#'   inspected; `compute_variant()` performs the production completeness check.
 compute_fisher_weights <- function(panel) {
   .assert_panel(panel)
 
@@ -585,11 +652,17 @@ prepare_distribution <- function(panel, date, lower, upper,
 #'   `annualized`. `monthly`, `yoy`, and `annualized` are in percent;
 #'   `annualized` is `100 * ((1 + monthly / 100)^12 - 1)`. `index` is a
 #'   chained level with the first panel month set to 100. The result is a
-#'   complete monthly grid over the panel span: months without a usable rate
-#'   have `NA` monthly rates and carry the previous index forward.
+#'   complete monthly grid over the panel span. The first month has `NA`
+#'   monthly, year-over-year, and annualized values because it has no
+#'   preceding month; every later month has a usable monthly rate, and `yoy`
+#'   is `NA` until a year-earlier index exists. An error is raised if a
+#'   calendar month is entirely missing or a component is missing from a month
+#'   in the span, because a carried-forward index would otherwise report zero
+#'   inflation and a misleading year-over-year change.
 compute_variant <- function(panel, lower, upper,
                             exclude_housing = FALSE, market_only = FALSE) {
   .assert_panel(panel)
+  .assert_complete_monthly_panel(panel, "`compute_variant()`")
   .assert_scalar_logical(exclude_housing, "exclude_housing")
   .assert_scalar_logical(market_only, "market_only")
   trim <- .validate_trim(lower, upper, allow_median = TRUE)
@@ -617,6 +690,23 @@ compute_variant <- function(panel, lower, upper,
   data.table::setorderv(result, "month_id")
 
   monthly <- result[["monthly"]]
+  missing_rate <- which(is.na(monthly))
+  unexpected <- missing_rate[missing_rate != 1L]
+  if (length(unexpected) > 0L) {
+    stop(sprintf(
+      paste0(
+        "`compute_variant()` could not compute a monthly rate for %s. ",
+        "Those months would otherwise carry the previous index forward and ",
+        "be reported as 0%% inflation; repair the panel before computing ",
+        "production variants."
+      ),
+      .preview_values(format(result[["date"]][unexpected], "%Y-%m"))
+    ), call. = FALSE)
+  }
+
+  # Only the initial month can lack a rate after the completeness check, so
+  # carrying the index forward sets the base 100 and never imputes an internal
+  # month as zero inflation.
   index <- 100 * cumprod(data.table::fifelse(
     is.na(monthly),
     1,
@@ -640,30 +730,21 @@ compute_variant <- function(panel, lower, upper,
   result[, .(date, monthly, index, yoy, annualized)]
 }
 
-#' Compute the standard and diagnostic trimmed-mean variants
+#' Canonical trimmed-mean variant specifications
 #'
-#' @param panel A data.table containing `housing` and `market_based` logical
-#'   columns in addition to the columns required by `compute_variant()`.
-#'   Both classification columns are required because the result includes
-#'   housing- and market-based variants.
-#' @param long Return one long data.table instead of a named list.
+#' @return A named list with one element per variant computed by
+#'   `compute_all_variants()`. Each element is a list with `lower` and `upper`
+#'   weight-trim fractions and `exclude_housing` / `market_only` filter flags.
 #'
-#' @return A named list with `tm16`, `tm32`, `tm48`, `tm64`, `median`,
-#'   `tm16_ex_housing`, `tm16_market`, `tm16_market_ex_housing`, and the
-#'   diagnostic `dallas_replication`, or one long data.table with a `variant`
-#'   column when `long = TRUE`. Every variant has the `compute_variant()`
-#'   columns, including `annualized`.
-#'
-#' @details `dallas_replication` applies the official 24% lower / 31% upper
-#'   trim to the monthly distribution for diagnostic comparison. It does not
-#'   fetch or replace the external official benchmark.
-compute_all_variants <- function(panel, long = FALSE) {
-  .assert_panel(panel)
-  .assert_scalar_logical(long, "long")
-  .require_flag(panel, "housing", "`compute_all_variants()`")
-  .require_flag(panel, "market_based", "`compute_all_variants()`")
-
-  specs <- list(
+#' @details `tm16`, `tm32`, `tm48`, and `tm64` trim symmetrically from each
+#'   tail: `tm16` trims 8% from each tail (16% total), `tm32` 16% (32%),
+#'   `tm48` 24% (48%), and `tm64` 32% (64%). `median` uses the official mytrim
+#'   50/50 limiting rule. The `_ex_housing` and `_market` variants apply the
+#'   `tm16` trim with the corresponding classification filters, and
+#'   `dallas_replication` applies the official Dallas Fed 24% lower / 31% upper
+#'   trim for diagnostic comparison.
+trim_specifications <- function() {
+  list(
     tm16 = list(lower = 0.08, upper = 0.08,
                 exclude_housing = FALSE, market_only = FALSE),
     tm32 = list(lower = 0.16, upper = 0.16,
@@ -683,6 +764,37 @@ compute_all_variants <- function(panel, long = FALSE) {
     dallas_replication = list(lower = 0.24, upper = 0.31,
                               exclude_housing = FALSE, market_only = FALSE)
   )
+}
+
+#' Compute the standard and diagnostic trimmed-mean variants
+#'
+#' @param panel A data.table containing `housing` and `market_based` logical
+#'   columns in addition to the columns required by `compute_variant()`.
+#'   Both classification columns are required because the result includes
+#'   housing- and market-based variants.
+#' @param long Return one long data.table instead of a named list.
+#'
+#' @return A named list with `tm16`, `tm32`, `tm48`, `tm64`, `median`,
+#'   `tm16_ex_housing`, `tm16_market`, `tm16_market_ex_housing`, and the
+#'   diagnostic `dallas_replication`, or one long data.table with a `variant`
+#'   column when `long = TRUE`. Every variant has the `compute_variant()`
+#'   columns, including `annualized`.
+#'
+#' @details All variants require the complete rectangular monthly panel
+#'   enforced by `compute_variant()`: every component must be observed in every
+#'   calendar month of the panel span, and missing months are an error. Trim and
+#'   filter settings come from `trim_specifications()`.
+#'   `dallas_replication` applies the official Dallas Fed trim defined there to
+#'   the monthly distribution for diagnostic comparison. It does not fetch or
+#'   replace the external official benchmark.
+compute_all_variants <- function(panel, long = FALSE) {
+  .assert_panel(panel)
+  .assert_scalar_logical(long, "long")
+  .require_flag(panel, "housing", "`compute_all_variants()`")
+  .require_flag(panel, "market_based", "`compute_all_variants()`")
+  .assert_complete_monthly_panel(panel, "`compute_all_variants()`")
+
+  specs <- trim_specifications()
 
   result <- lapply(specs, function(spec) {
     compute_variant(

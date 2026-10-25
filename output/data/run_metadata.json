@@ -1,0 +1,507 @@
+{
+  "schema": "trimmed-mean-run-metadata-v1",
+  "latest_month": "2026-08",
+  "latest_date": "2026-08-01",
+  "refresh": true,
+  "run": {
+    "started_at": "2026-10-25T11:18:23+1100",
+    "finished_at": "2026-10-25T11:18:42+1100",
+    "started_at_utc": "2026-10-25T00:18:23Z",
+    "duration_seconds": 18.8805360794067,
+    "timezone": "Australia/Sydney",
+    "command": "Rscript R/run_all.R --refresh",
+    "r": {
+      "version": "R version 4.5.2 (2025-10-31 ucrt)",
+      "version_number": "4.5.2",
+      "platform": "x86_64-w64-mingw32",
+      "nickname": "[Not] Part in a Rumble"
+    },
+    "packages": {
+      "data.table": "1.18.0",
+      "ggplot2": "4.0.1",
+      "jsonlite": "2.0.0",
+      "digest": "0.6.39",
+      "bea.R": "1.1.0"
+    }
+  },
+  "rows": {
+    "components": 192,
+    "expanded_lines": 194,
+    "months": 128,
+    "panel": 24576,
+    "crosswalk": 192,
+    "measures": 1152,
+    "benchmarks": 840,
+    "diagnostic": 128,
+    "diagnostic_complete": 116
+  },
+  "validation": {
+    "components": {
+      "expected": 192,
+      "observed": 192,
+      "passed": true
+    },
+    "expanded_lines": {
+      "expected": 194,
+      "observed": 194,
+      "passed": true
+    },
+    "classifications": {
+      "housing_missing": 0,
+      "market_based_missing": 0,
+      "invalid_source_groups": 0,
+      "panel_lock_mismatches": 0,
+      "passed": true
+    },
+    "latest_month": {
+      "latest": "2026-08-01",
+      "price": "2026-08-01",
+      "nominal": "2026-08-01",
+      "dallas": "2026-08-01",
+      "panel": "2026-08-01",
+      "measures": "2026-08-01",
+      "latest_measure": "2026-08-01",
+      "latest_benchmark": "2026-08-01",
+      "passed": true
+    },
+    "freshness": {
+      "current_month": "2026-10",
+      "months_behind": 2,
+      "limit_months": 3,
+      "passed": true
+    },
+    "regression": {
+      "prior_latest": "2026-08",
+      "latest": "2026-08",
+      "passed": true
+    },
+    "yoy_plausibility": {
+      "limit_pp": 20,
+      "headline_max_abs_pp": 7.2183163396768,
+      "core_max_abs_pp": 5.64044984846825,
+      "passed": true
+    },
+    "dallas_diagnostic": {
+      "complete_months": 116,
+      "mean_abs_error_pp": 0.0381705602268217,
+      "max_abs_error_pp": 0.0976007589605365,
+      "worst_month": "2021-10",
+      "worst_official_pp": 2.72,
+      "worst_reconstructed_pp": 2.81760075896054,
+      "worst_difference_pp": 0.0976007589605365,
+      "passed": true
+    },
+    "outputs": {
+      "crosswalk": {
+        "rows": 192,
+        "components": 192,
+        "expanded_lines": 194,
+        "passed": true
+      },
+      "component_panel": {
+        "rows": 24576,
+        "components": 192,
+        "months": 128,
+        "passed": true
+      },
+      "dallas_diagnostic": {
+        "rows": 128,
+        "complete_months": 116,
+        "mean_abs_error_pp": 0.0381705602268217,
+        "max_abs_error_pp": 0.0976007589605365,
+        "worst_month": "2021-10",
+        "passed": true
+      },
+      "run_summary": {
+        "rows": 1,
+        "latest_month": "2026-08",
+        "components": 192,
+        "expanded_lines": 194,
+        "figures": 7,
+        "passed": true
+      },
+      "measures": {
+        "rows": 1152,
+        "variants": 9,
+        "latest_month": "2026-08",
+        "passed": true
+      },
+      "distribution": {
+        "rows": 192,
+        "components": 192,
+        "latest_month": "2026-08",
+        "passed": true
+      },
+      "figures": {
+        "expected": 7,
+        "produced": 7,
+        "nonempty": true,
+        "png_signature": true,
+        "passed": true
+      }
+    },
+    "all_passed": true
+  },
+  "inputs": {
+    "manifest": {
+      "path": "data/raw/manifest.csv",
+      "hash_algo": "sha256",
+      "hash": "2df855d21449782a2baa3b538772c6205914057c5509ed6a4bea50f7b6145569",
+      "rows": [
+        {
+          "dataset": "price",
+          "source": "BEA NIUnderlyingDetail",
+          "identifier": "U20404",
+          "n_rows": 50944,
+          "first_date": "2016-01-01",
+          "latest_date": "2026-08-01",
+          "pulled_at": "2026-10-25T11:18:32+1100"
+        },
+        {
+          "dataset": "nominal",
+          "source": "BEA NIUnderlyingDetail",
+          "identifier": "U20405",
+          "n_rows": 51200,
+          "first_date": "2016-01-01",
+          "latest_date": "2026-08-01",
+          "pulled_at": "2026-10-25T11:18:36+1100"
+        },
+        {
+          "dataset": "dallas",
+          "source": "FRED",
+          "identifier": "PCETRIM12M159SFRBDAL",
+          "n_rows": 584,
+          "first_date": "1978-01-01",
+          "latest_date": "2026-08-01",
+          "pulled_at": "2026-10-25T11:18:37+1100"
+        }
+      ]
+    },
+    "raw_files": [
+      {
+        "path": "data/raw/bea_U20404_2016_2020.csv",
+        "bytes": 1822302,
+        "hash_algo": "sha256",
+        "hash": "101085111426fcd42a49addf52378891bdc1259cfa5dbd36bf4f2727f2abf4cc"
+      },
+      {
+        "path": "data/raw/bea_U20404_2021_2023.csv",
+        "bytes": 1097009,
+        "hash_algo": "sha256",
+        "hash": "6a06c9099d804931457e3b6a21e0359a2a552bb471e73a2e62c4e6883827599f"
+      },
+      {
+        "path": "data/raw/bea_U20404_2024_2026.csv",
+        "bytes": 975507,
+        "hash_algo": "sha256",
+        "hash": "9ab6284781cfd5d05e8746ad58db1bd1f5606112f3895074baa280553d8be543"
+      },
+      {
+        "path": "data/raw/bea_U20405_2016_2020.csv",
+        "bytes": 1803187,
+        "hash_algo": "sha256",
+        "hash": "fbf56f6829daadf74f4fb1c7853fb8cb127bb7d636b984bb44a883a585547bea"
+      },
+      {
+        "path": "data/raw/bea_U20405_2021_2023.csv",
+        "bytes": 1083451,
+        "hash_algo": "sha256",
+        "hash": "2b85c8ec5db3a4805df1db002e6f92fe5722897abc8a25c21fcd8193a0be14b2"
+      },
+      {
+        "path": "data/raw/bea_U20405_2024_2026.csv",
+        "bytes": 964038,
+        "hash_algo": "sha256",
+        "hash": "d3dc75e07827197c0fb2e92a119ecdfcf1519c7f0411df2cc9aaa8c27c17412c"
+      },
+      {
+        "path": "data/raw/fred_PCETRIM12M159SFRBDAL.csv",
+        "bytes": 9861,
+        "hash_algo": "sha256",
+        "hash": "1cea643783e2388c6acae2e8a12f1370f86bba3748a1d97cb673258acd3d375f"
+      }
+    ],
+    "config_locks": [
+      {
+        "path": "config/bea_line_lock.csv",
+        "bytes": 46158,
+        "hash_algo": "sha256",
+        "hash": "1c868d9cf75a9083cd32560987aad143a46ccd76bb0627881ac0d599c171a656"
+      },
+      {
+        "path": "config/crosswalk_lock.csv",
+        "bytes": 33241,
+        "hash_algo": "sha256",
+        "hash": "8909f978002847e4eb8e720f3a15982334a386d67831fd5bc05cdf1fa9e6d6c0"
+      }
+    ],
+    "provenance": {
+      "price": {
+        "available": true,
+        "source": "BEA NIUnderlyingDetail",
+        "pulled_at": "2026-10-25T11:18:32+1100",
+        "pulled_at_source": "api",
+        "metadata_sources": [
+          "api"
+        ],
+        "cache_files": 3,
+        "files": [
+          {
+            "file": "bea_U20404_2016_2020.csv",
+            "table": "U20404",
+            "year_min": 2016,
+            "year_max": 2020,
+            "first_period": "2016-01-01",
+            "latest_period": "2020-12-01",
+            "row_count": 23880,
+            "hash_algo": "sha256",
+            "hash": "101085111426fcd42a49addf52378891bdc1259cfa5dbd36bf4f2727f2abf4cc",
+            "metadata_source": "api",
+            "reused": false
+          },
+          {
+            "file": "bea_U20404_2021_2023.csv",
+            "table": "U20404",
+            "year_min": 2021,
+            "year_max": 2023,
+            "first_period": "2021-01-01",
+            "latest_period": "2023-12-01",
+            "row_count": 14328,
+            "hash_algo": "sha256",
+            "hash": "6a06c9099d804931457e3b6a21e0359a2a552bb471e73a2e62c4e6883827599f",
+            "metadata_source": "api",
+            "reused": false
+          },
+          {
+            "file": "bea_U20404_2024_2026.csv",
+            "table": "U20404",
+            "year_min": 2024,
+            "year_max": 2026,
+            "first_period": "2024-01-01",
+            "latest_period": "2026-08-01",
+            "row_count": 12736,
+            "hash_algo": "sha256",
+            "hash": "9ab6284781cfd5d05e8746ad58db1bd1f5606112f3895074baa280553d8be543",
+            "metadata_source": "api",
+            "reused": false
+          }
+        ],
+        "table": "U20404",
+        "years": [2016, 2026]
+      },
+      "nominal": {
+        "available": true,
+        "source": "BEA NIUnderlyingDetail",
+        "pulled_at": "2026-10-25T11:18:36+1100",
+        "pulled_at_source": "api",
+        "metadata_sources": [
+          "api"
+        ],
+        "cache_files": 3,
+        "files": [
+          {
+            "file": "bea_U20405_2016_2020.csv",
+            "table": "U20405",
+            "year_min": 2016,
+            "year_max": 2020,
+            "first_period": "2016-01-01",
+            "latest_period": "2020-12-01",
+            "row_count": 24000,
+            "hash_algo": "sha256",
+            "hash": "fbf56f6829daadf74f4fb1c7853fb8cb127bb7d636b984bb44a883a585547bea",
+            "metadata_source": "api",
+            "reused": false
+          },
+          {
+            "file": "bea_U20405_2021_2023.csv",
+            "table": "U20405",
+            "year_min": 2021,
+            "year_max": 2023,
+            "first_period": "2021-01-01",
+            "latest_period": "2023-12-01",
+            "row_count": 14400,
+            "hash_algo": "sha256",
+            "hash": "2b85c8ec5db3a4805df1db002e6f92fe5722897abc8a25c21fcd8193a0be14b2",
+            "metadata_source": "api",
+            "reused": false
+          },
+          {
+            "file": "bea_U20405_2024_2026.csv",
+            "table": "U20405",
+            "year_min": 2024,
+            "year_max": 2026,
+            "first_period": "2024-01-01",
+            "latest_period": "2026-08-01",
+            "row_count": 12800,
+            "hash_algo": "sha256",
+            "hash": "d3dc75e07827197c0fb2e92a119ecdfcf1519c7f0411df2cc9aaa8c27c17412c",
+            "metadata_source": "api",
+            "reused": false
+          }
+        ],
+        "table": "U20405",
+        "years": [2016, 2026]
+      },
+      "dallas": {
+        "available": true,
+        "source": "FRED",
+        "pulled_at": "2026-10-25T11:18:37+1100",
+        "pulled_at_source": "fred-download",
+        "metadata_sources": [
+          "fred-download"
+        ],
+        "cache_files": 1,
+        "files": [
+          {
+            "file": "fred_PCETRIM12M159SFRBDAL.csv",
+            "table": "",
+            "year_min": 1978,
+            "year_max": 2026,
+            "first_period": "1978-01-01",
+            "latest_period": "2026-08-01",
+            "row_count": 584,
+            "hash_algo": "sha256",
+            "hash": "1cea643783e2388c6acae2e8a12f1370f86bba3748a1d97cb673258acd3d375f",
+            "metadata_source": "fred-download",
+            "reused": false
+          }
+        ],
+        "series": "PCETRIM12M159SFRBDAL"
+      }
+    }
+  },
+  "prior": {
+    "path": "output/data/run_summary.csv",
+    "exists": true,
+    "latest_month": "2026-08"
+  },
+  "outputs": {
+    "data_dir": "output/data",
+    "figures_dir": "output/figures",
+    "figures": [
+      "01_benchmarks_dallas",
+      "02_dallas_16_core",
+      "03_trim_ladder",
+      "04_latest_distribution",
+      "05_housing",
+      "06_market_based",
+      "07_market_ex_housing"
+    ],
+    "files": [
+      {
+        "path": "output/data/component_crosswalk.csv",
+        "bytes": 25034,
+        "hash_algo": "sha256",
+        "hash": "11444708f846286762893266d9f7ec9dd981486e6c850e5b89ab0e8647fced4f"
+      },
+      {
+        "path": "output/data/component_panel.csv",
+        "bytes": 2601287,
+        "hash_algo": "sha256",
+        "hash": "98d2853cb87c38b36d4cc724bab78a7fd5969e7a48e56b96b28f8f28c3817a87"
+      },
+      {
+        "path": "output/data/dallas_diagnostic.csv",
+        "bytes": 6476,
+        "hash_algo": "sha256",
+        "hash": "591a2b5aadf87e99a314ebe6fac9b87f5c8aa3a6633434210bf49c61bcebeda4"
+      },
+      {
+        "path": "output/data/measures_yoy.csv",
+        "bytes": 86447,
+        "hash_algo": "sha256",
+        "hash": "f3b581a851779d49810c3594907ad5211009fd9a4df37f669f9cc6c5582bdefa"
+      },
+      {
+        "path": "output/data/latest_distribution.csv",
+        "bytes": 38815,
+        "hash_algo": "sha256",
+        "hash": "e297bf110a5a53a62f5cf54e8863e9ae19c5a6aa6a0a6f207a15b423d314665e"
+      },
+      {
+        "path": "output/data/run_summary.csv",
+        "bytes": 234,
+        "hash_algo": "sha256",
+        "hash": "f94af31ff1822b33fe5315963fbd1165d9cd95d61f1d10ec2c66532dc3f3dd03"
+      },
+      {
+        "path": "output/figures/01_benchmarks_dallas.png",
+        "bytes": 159811,
+        "hash_algo": "sha256",
+        "hash": "03c0ddc203da891ab4b9c1f56a799687b5ca233d1e047e1ea6e54a69bd59bccd"
+      },
+      {
+        "path": "output/figures/02_dallas_16_core.png",
+        "bytes": 152102,
+        "hash_algo": "sha256",
+        "hash": "ca9df3b093281e5b76b8529f7547e8bc69193003a0044da70c12b4f1291ef3a7"
+      },
+      {
+        "path": "output/figures/03_trim_ladder.png",
+        "bytes": 168870,
+        "hash_algo": "sha256",
+        "hash": "03eb1643b742ce6b86c4dcdfa39b3d7022a92e4889ef2a3a211967296475e7bf"
+      },
+      {
+        "path": "output/figures/04_latest_distribution.png",
+        "bytes": 116128,
+        "hash_algo": "sha256",
+        "hash": "9e1d2a8f73f270ca0b880cfc28a933b48c84278c1d8fefac3c85f60972e8bc33"
+      },
+      {
+        "path": "output/figures/05_housing.png",
+        "bytes": 149370,
+        "hash_algo": "sha256",
+        "hash": "17fc11a9074d2dcef2797f035bd10c051a9320645b639e9e819c40f65df18eea"
+      },
+      {
+        "path": "output/figures/06_market_based.png",
+        "bytes": 148801,
+        "hash_algo": "sha256",
+        "hash": "0576dd204dbd7ae35a0bfe60105713c5ba0d961e4eddf1b711a2605467026fb9"
+      },
+      {
+        "path": "output/figures/07_market_ex_housing.png",
+        "bytes": 183470,
+        "hash_algo": "sha256",
+        "hash": "0b3c15a9968500e75a6c5af1cc863a78889bc4dafe08ae2399ea1d626c57927d"
+      }
+    ]
+  },
+  "run_summary": {
+    "path": "output/data/run_summary.csv",
+    "hash_algo": "sha256",
+    "hash": "f94af31ff1822b33fe5315963fbd1165d9cd95d61f1d10ec2c66532dc3f3dd03",
+    "values": [
+      {
+        "latest_month": "2026-08-01",
+        "components": 192,
+        "market_based_share": 0.866279521455861,
+        "figures": 7,
+        "expanded_lines": 194,
+        "dallas_complete_months": 116,
+        "dallas_mean_abs_error_pp": 0.0381705602268217,
+        "dallas_max_abs_error_pp": 0.0976007589605365,
+        "refresh": true
+      }
+    ]
+  },
+  "git": {
+    "available": true,
+    "commit": "731407642ec8bc4cca22c32ee30fe035fdcf075f",
+    "branch": "main",
+    "dirty": true,
+    "status": [
+      " M R/bea_data.R",
+      " M R/components.R",
+      " M R/plots.R",
+      " M R/run_all.R",
+      " M R/trimmed_mean.R",
+      " M output/data/component_crosswalk.csv",
+      " M output/data/run_summary.csv",
+      "?? config/",
+      "?? output/data/run_metadata.json"
+    ],
+    "status_truncated": false
+  }
+}
